@@ -5,7 +5,39 @@
 ▲ Next.js 16.2.10 (Turbopack)
 - Local:         http://localhost:3000
 - Network:       http://192.168.0.2:3000
-✓ Ready in 530ms
+✓ Ready in 1076ms
 
- GET / 200 in 764ms (next.js: 284ms, application-code: 480ms)
- GET / 200 in 262ms (next.js: 69ms, application-code: 192ms)
+ GET / 200 in 1205ms (next.js: 647ms, application-code: 558ms)
+⨯ ./src/app/page.tsx:5:1
+Module not found: Can't resolve '@/components/Officers'
+  [90m3 |[0m [36mimport[0m { [33mCustomCursor[0m } [36mfrom[0m [32m"@/components/CustomCursor"[0m;
+  [90m4 |[0m [36mimport[0m { [33mHero[0m } [36mfrom[0m [32m"@/components/Hero"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mOfficers[0m } [36mfrom[0m [32m"@/components/Officers"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { [33mStats[0m } [36mfrom[0m [32m"@/components/Stats"[0m;
+  [90m7 |[0m [36mimport[0m { [33mGallery[0m } [36mfrom[0m [32m"@/components/Gallery"[0m;
+  [90m8 |[0m [36mimport[0m { [33mChat[0m } [36mfrom[0m [32m"@/components/Chat"[0m;
+
+Import map: aliased to relative './src/components/Officers' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./src/app/page.tsx:5:1
+Module not found: Can't resolve '@/components/Officers'
+  [90m3 |[0m [36mimport[0m { [33mCustomCursor[0m } [36mfrom[0m [32m"@/components/CustomCursor"[0m;
+  [90m4 |[0m [36mimport[0m { [33mHero[0m } [36mfrom[0m [32m"@/components/Hero"[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { [33mOfficers[0m } [36mfrom[0m [32m"@/components/Officers"[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { [33mStats[0m } [36mfrom[0m [32m"@/components/Stats"[0m;
+  [90m7 |[0m [36mimport[0m { [33mGallery[0m } [36mfrom[0m [32m"@/components/Gallery"[0m;
+  [90m8 |[0m [36mimport[0m { [33mChat[0m } [36mfrom[0m [32m"@/components/Chat"[0m;
+
+Import map: aliased to relative './src/components/Officers' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+✓ Compiled in 226ms

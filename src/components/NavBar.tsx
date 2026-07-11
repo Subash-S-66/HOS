@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Menu, X } from "lucide-react";
 import clsx from "clsx";
+import Link from "next/link";
 
 export function NavBar() {
   const [scrolled, setScrolled] = useState(false);
@@ -18,10 +19,11 @@ export function NavBar() {
   }, []);
 
   const navLinks = [
-    { name: "HQ", href: "#" },
-    { name: "Officers", href: "#officers" },
-    { name: "Intel", href: "#stats" },
-    { name: "Archives", href: "#gallery" },
+    { name: "HQ", href: "/" },
+    { name: "Network", href: "/#links" },
+    { name: "Intel", href: "/#stats" },
+    { name: "Archives", href: "/#gallery" },
+    { name: "Admin", href: "/admin" },
   ];
 
   return (
@@ -35,23 +37,23 @@ export function NavBar() {
         )}
       >
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer group">
+          <Link href="/" className="flex items-center gap-3 cursor-pointer group">
             <Shield className="w-8 h-8 text-imperial-gold group-hover:text-imperial-gold-light transition-colors" />
             <span className="font-cinzel font-bold text-xl tracking-wider text-white hidden sm:block">
               HOS <span className="text-blood-crimson-light">1895</span>
             </span>
-          </div>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
-              <a
+              <Link
                 key={link.name}
                 href={link.href}
                 className="text-ash-grey hover:text-imperial-gold font-rajdhani uppercase tracking-widest text-sm font-semibold transition-colors relative group"
               >
                 {link.name}
                 <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blood-crimson transition-all group-hover:w-full" />
-              </a>
+              </Link>
             ))}
             <button className="px-6 py-2 border border-imperial-gold/50 text-imperial-gold font-cinzel text-sm uppercase tracking-wider hover:bg-blood-crimson hover:border-blood-crimson hover:text-white transition-all duration-300">
               Join Now
@@ -86,17 +88,20 @@ export function NavBar() {
             </div>
             <div className="flex flex-col items-center justify-center flex-1 gap-8">
               {navLinks.map((link, i) => (
-                <motion.a
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 * i }}
+                <Link
                   key={link.name}
                   href={link.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-2xl font-cinzel text-ash-grey hover:text-imperial-gold uppercase tracking-widest transition-colors"
                 >
-                  {link.name}
-                </motion.a>
+                  <motion.span
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 * i }}
+                    className="text-2xl font-cinzel text-ash-grey hover:text-imperial-gold uppercase tracking-widest transition-colors block"
+                  >
+                    {link.name}
+                  </motion.span>
+                </Link>
               ))}
               <motion.button
                 initial={{ opacity: 0, y: 20 }}

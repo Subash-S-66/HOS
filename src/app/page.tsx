@@ -2,7 +2,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { NavBar } from "@/components/NavBar";
 import { CustomCursor } from "@/components/CustomCursor";
 import { Hero } from "@/components/Hero";
-import { Officers } from "@/components/Officers";
+import { DynamicLinks } from "@/components/DynamicLinks";
 import { Stats } from "@/components/Stats";
 import { Gallery } from "@/components/Gallery";
 import { Chat } from "@/components/Chat";
@@ -17,12 +17,12 @@ export default function Home() {
 
       <main className="flex min-h-screen flex-col bg-void-black text-ash-grey overflow-hidden selection:bg-blood-crimson selection:text-white">
         <Hero />
-        <Officers />
+        <DynamicLinks />
         <Stats />
         <Gallery />
-        <Chat />
       </main>
 
+      <Chat />
       <ChatBot />
     </>
   );
