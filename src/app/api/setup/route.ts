@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const { setupToken, password } = await req.json();
 
-    if (setupToken !== process.env.SETUP_TOKEN) {
+    if (!process.env.SETUP_TOKEN || setupToken !== process.env.SETUP_TOKEN) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

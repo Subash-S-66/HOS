@@ -3,10 +3,12 @@
 import { ReactNode } from 'react';
 import Navbar from './Navbar';
 import CustomCursor from './CustomCursor';
-import ThreeBackground from '../three/ThreeBackground';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePathname } from 'next/navigation';
 import AIChatbot from '../chat/AIChatbot';
+import dynamic from 'next/dynamic';
+
+const ThreeBackground = dynamic(() => import('../three/ThreeBackground'), { ssr: false });
 
 interface LayoutClientProps {
   children: ReactNode;

@@ -36,7 +36,7 @@ export default function Members() {
           <motion.h1
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="text-4xl md:text-5xl font-cyber font-bold text-white mb-4"
+            className="text-3xl sm:text-4xl md:text-5xl font-cyber font-bold text-white mb-4"
           >
             ALLIANCE <span className="text-neon-green glow-text">ROSTER</span>
           </motion.h1>

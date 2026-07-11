@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const { setupToken } = await req.json();
 
-    if (setupToken !== process.env.SETUP_TOKEN) {
+    if (!process.env.SETUP_TOKEN || setupToken !== process.env.SETUP_TOKEN) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -32,6 +32,43 @@ export async function POST(req: Request) {
         { title: "Server vs Server (SVS)", description: "Prepare for cross-server warfare. All shields down, maximum aggression authorized.", startDate: new Date(Date.now() + 86400000 * 2), type: "War", participants: [], status: "upcoming" },
         { title: "Battlefield", description: "Coordinated battlefield assault. Mandatory for all R3+ members.", startDate: new Date(Date.now() + 86400000 * 5), type: "Tactical", participants: [], status: "upcoming" },
       ]);
+    }
+
+    // Seed Gallery
+    const { Gallery } = await import('@/lib/models/Gallery');
+    const galleryCount = await Gallery.countDocuments();
+    if (galleryCount === 0) {
+      await Gallery.insertMany([
+        { title: "SVS Victory", url: "https://via.placeholder.com/600", type: "image", category: "Battles" },
+        { title: "Server Crown", url: "https://via.placeholder.com/600", type: "image", category: "Achievements" },
+        { title: "Boss Raid", url: "https://via.placeholder.com/600", type: "image", category: "Events" },
+        { title: "HOS Family", url: "https://via.placeholder.com/600", type: "image", category: "All" },
+      ]);
+    }
+
+    // Seed War Reports
+    const { WarReport } = await import('@/lib/models/WarReport');
+    const reportsCount = await WarReport.countDocuments();
+    if (reportsCount === 0) {
+      await WarReport.insertMany([
+        { enemyAlliance: "[WAR] WarLords", battleDate: new Date(), battleSummary: "Coordinated strike on enemy throne level 35. Complete annihilation of defending forces.", kills: 145000000, losses: 12000000, damageStats: { enemyPowerLost: "8.5B", powerLost: "1.2B" } },
+        { enemyAlliance: "[DOM] Dominators", battleDate: new Date(Date.now() - 86400000 * 3), battleSummary: "Successfully held all major points. Enemy forces depleted by zero hour.", kills: 85000000, losses: 5000000, damageStats: { enemyPowerLost: "2.1B", powerLost: "500M" } }
+      ]);
+    }
+
+    // Seed Leaderboards
+    const { Leaderboard } = await import('@/lib/models/Leaderboard');
+    const leaderboardsCount = await Leaderboard.countDocuments();
+    if (leaderboardsCount === 0 && membersCount === 0) { // Assuming Member got seeded above
+       const members = await Member.find({});
+       for (const member of members) {
+          await Leaderboard.create({
+            memberId: member._id,
+            highestPower: member.power,
+            highestKills: member.kills,
+            mostDonations: Math.floor(Math.random() * 50000000)
+          });
+       }
     }
 
     return NextResponse.json({ message: 'Database seeded successfully' });

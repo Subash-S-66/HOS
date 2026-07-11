@@ -39,11 +39,13 @@ export default function Chat() {
       setShowWelcome(false);
       initSocket(JSON.parse(savedUser));
     }
+  }, []);
 
+  useEffect(() => {
     return () => {
       if (socket) socket.disconnect();
     };
-  }, []);
+  }, [socket]);
 
   const initSocket = (userData: ChatUser) => {
     const newSocket = io(window.location.origin, {

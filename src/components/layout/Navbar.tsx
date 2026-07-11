@@ -55,9 +55,9 @@ export default function Navbar() {
               <div className="absolute inset-0 bg-neon-green/10 transform -skew-x-12 translate-x-full group-hover:translate-x-0 transition-transform duration-500"></div>
               <span className="font-cyber font-bold text-neon-green text-xl relative z-10">HOS</span>
             </div>
-            <div className="hidden sm:flex flex-col">
-              <span className="font-cyber font-bold text-white tracking-widest text-sm uppercase">House of</span>
-              <span className="font-cyber font-bold text-neon-green tracking-widest text-lg leading-none uppercase glow-text">Spanking</span>
+            <div className="flex flex-col">
+              <span className="font-cyber font-bold text-white tracking-widest text-xs sm:text-sm uppercase">House of</span>
+              <span className="font-cyber font-bold text-neon-green tracking-widest text-sm sm:text-lg leading-none uppercase glow-text">Spanking</span>
             </div>
           </div>
 

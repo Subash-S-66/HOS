@@ -1,16 +1,33 @@
 "use client";
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Image as ImageIcon } from 'lucide-react';
 
 export default function Gallery() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/gallery')
+      .then(res => res.json())
+      .then(data => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to load gallery items", err);
+        setLoading(false);
+      });
+  }, []);
+
   return (
     <div className="min-h-screen pt-32 pb-20 px-4 md:px-8 max-w-7xl mx-auto">
       <div className="text-center mb-16">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-4xl md:text-6xl font-cyber font-bold text-white mb-4"
+          className="text-3xl sm:text-4xl md:text-6xl font-cyber font-bold text-white mb-4"
         >
           HOS <span className="text-neon-green glow-text">ARCHIVES</span>
         </motion.h1>
@@ -40,11 +57,16 @@ export default function Gallery() {
         ))}
       </div>
 
-      {/* Masonry Layout Placeholder */}
+      {loading ? (
+        <div className="text-center py-20">
+          <div className="w-16 h-16 border-4 border-neon-green border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h3 className="text-xl text-gray-400 font-cyber">DECRYPTING ARCHIVES...</h3>
+        </div>
+      ) : (
       <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 space-y-6">
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((item, i) => (
+        {items.map((item, i) => (
           <motion.div
-            key={i}
+            key={item._id || i}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
@@ -53,22 +75,26 @@ export default function Gallery() {
             }`}
           >
             <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
-              <ImageIcon className="w-12 h-12 text-gray-700" />
+              {item.url ? (
+                <img src={item.url} alt={item.title} className="w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity" />
+              ) : (
+                <ImageIcon className="w-12 h-12 text-gray-700" />
+              )}
             </div>
 
-            {/* Overlay */}
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center p-6 text-center">
-              {i % 4 === 0 ? (
+              {item.type === 'video' ? (
                 <div className="w-12 h-12 rounded-full bg-neon-green/20 flex items-center justify-center mb-3">
                   <Play className="w-5 h-5 text-neon-green ml-1" />
                 </div>
               ) : null}
-              <h3 className="text-white font-bold font-cyber mb-1">Archive Record #{item}</h3>
-              <p className="text-gray-300 text-sm">Server 1895 History</p>
+              <h3 className="text-white font-bold font-cyber mb-1">{item.title}</h3>
+              <p className="text-gray-300 text-sm">{item.category}</p>
             </div>
           </motion.div>
         ))}
       </div>
+      )}
     </div>
   );
 }

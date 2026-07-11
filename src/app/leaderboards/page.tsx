@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Zap, Crosshair, HeartHandshake } from 'lucide-react';
 
@@ -10,32 +10,24 @@ const categories = [
   { id: 'donations', name: 'Donations', icon: HeartHandshake },
 ];
 
-const mockData = {
-  power: [
-    { rank: 1, name: "KingSlayer", value: "12.5B", change: "up" },
-    { rank: 2, name: "ShadowDeath", value: "9.2B", change: "same" },
-    { rank: 3, name: "DragonHeart", value: "8.7B", change: "up" },
-    { rank: 4, name: "IronFist", value: "7.9B", change: "down" },
-    { rank: 5, name: "SilentAssassin", value: "5.4B", change: "up" },
-  ],
-  kills: [
-    { rank: 1, name: "KingSlayer", value: "450M", change: "same" },
-    { rank: 2, name: "ShadowDeath", value: "320M", change: "up" },
-    { rank: 3, name: "DragonHeart", value: "290M", change: "down" },
-    { rank: 4, name: "IronFist", value: "250M", change: "up" },
-    { rank: 5, name: "WarBringer", value: "150M", change: "up" },
-  ],
-  donations: [
-    { rank: 1, name: "MysticMage", value: "50M", change: "up" },
-    { rank: 2, name: "KingSlayer", value: "45M", change: "down" },
-    { rank: 3, name: "IronFist", value: "40M", change: "same" },
-    { rank: 4, name: "DragonHeart", value: "38M", change: "up" },
-    { rank: 5, name: "ShadowDeath", value: "35M", change: "down" },
-  ]
-};
-
 export default function Leaderboards() {
   const [activeCategory, setActiveCategory] = useState<'power' | 'kills' | 'donations'>('power');
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/leaderboards?category=${activeCategory}`)
+      .then(res => res.json())
+      .then(resData => {
+        setData(resData);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to load leaderboards", err);
+        setLoading(false);
+      });
+  }, [activeCategory]);
 
   return (
     <div className="min-h-screen pt-32 pb-20 px-4 md:px-8 max-w-5xl mx-auto">
@@ -43,7 +35,7 @@ export default function Leaderboards() {
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-4xl md:text-6xl font-cyber font-bold text-white mb-4"
+          className="text-3xl sm:text-4xl md:text-6xl font-cyber font-bold text-white mb-4"
         >
           HALL OF <span className="text-neon-green glow-text">FAME</span>
         </motion.h1>
@@ -93,7 +85,13 @@ export default function Leaderboards() {
         </div>
 
         <div className="divide-y divide-white/5">
-          {mockData[activeCategory].map((row, i) => (
+          {loading ? (
+            <div className="text-center py-20">
+              <div className="w-16 h-16 border-4 border-neon-green border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <h3 className="text-xl text-gray-400 font-cyber">CALCULATING RANKS...</h3>
+            </div>
+          ) : (
+            data.map((row, i) => (
             <div
               key={row.rank}
               className={`grid grid-cols-12 gap-4 p-4 items-center transition-colors hover:bg-white/5 ${
@@ -129,11 +127,11 @@ export default function Leaderboards() {
                   activeCategory === 'kills' ? 'text-red-400' :
                   'text-neon-green'
                 }`}>
-                  {row.value}
+                  {typeof row.value === 'number' ? row.value.toLocaleString() : row.value}
                 </span>
               </div>
             </div>
-          ))}
+          )))}
         </div>
       </motion.div>
     </div>

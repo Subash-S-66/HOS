@@ -3,15 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import Link from 'next/link';
-import { ArrowRight, Volume2, VolumeX, Shield, Swords, Trophy, Users } from 'lucide-react';
-import gsap from 'gsap';
+import { Volume2, VolumeX, Shield, Swords, Trophy, Users } from 'lucide-react';
 
 export default function Home() {
   const [typingText, setTypingText] = useState("");
   const [textIndex, setTextIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const logoRef = useRef<HTMLDivElement>(null);
 
   const messages = [
     "Welcome to House of Spanking",
@@ -30,6 +28,7 @@ export default function Home() {
     let currentCharIndex = 0;
     let isDeleting = false;
     let typingSpeed = 100;
+    let timerId: NodeJS.Timeout;
 
     const type = () => {
       if (!isDeleting && currentCharIndex <= currentText.length) {
@@ -48,31 +47,19 @@ export default function Home() {
       } else if (currentCharIndex === -1) {
         isDeleting = false;
         setTextIndex((prev) => (prev + 1) % messages.length);
-        currentText = messages[(textIndex + 1) % messages.length];
-        typingSpeed = 500; // Pause before new word
+        // Avoid continuing recursion, let the next effect cycle handle the index update
+        return;
       }
 
-      setTimeout(type, typingSpeed);
+      timerId = setTimeout(type, typingSpeed);
     };
 
-    const timer = setTimeout(type, 1000);
-    return () => clearTimeout(timer);
+    timerId = setTimeout(type, 500);
+    return () => clearTimeout(timerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textIndex]);
 
   useEffect(() => {
-    if (logoRef.current) {
-      gsap.to(logoRef.current, {
-        y: -10,
-        rotationX: 10,
-        rotationY: -10,
-        duration: 2,
-        yoyo: true,
-        repeat: -1,
-        ease: "sine.inOut"
-      });
-    }
-
     audioRef.current = new Audio('https://cdn.pixabay.com/download/audio/2022/01/18/audio_d0a13f69d2.mp3?filename=cinematic-time-lapse-115652.mp3');
     audioRef.current.loop = true;
     audioRef.current.volume = 0.3;
@@ -111,20 +98,23 @@ export default function Home() {
         className="flex flex-col items-center justify-center min-h-screen w-full relative z-10 px-4"
       >
         <motion.div
-          ref={logoRef}
           initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 1.5, type: "spring", bounce: 0.4 }}
-          className="relative mb-8"
+          animate={{ scale: 1, opacity: 1, y: [-10, 10, -10] }}
+          transition={{
+            scale: { duration: 1.5, type: "spring", bounce: 0.4 },
+            opacity: { duration: 1.5 },
+            y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
+          }}
+          className="relative mb-8 text-center"
         >
-          <div className="absolute inset-0 bg-neon-green blur-[100px] opacity-20 rounded-full"></div>
-          <h1 className="text-7xl md:text-9xl font-cyber font-bold text-transparent bg-clip-text bg-gradient-to-b from-white via-gray-200 to-gray-500 tracking-tighter filter drop-shadow-[0_0_15px_rgba(0,255,102,0.5)]">
+          <div className="absolute inset-0 bg-neon-green blur-[80px] opacity-20 rounded-full"></div>
+          <h1 className="text-6xl sm:text-7xl md:text-9xl font-cyber font-bold text-white tracking-tighter glow-text whitespace-nowrap">
             HOS
           </h1>
         </motion.div>
 
-        <div className="h-12 md:h-16 flex items-center justify-center mb-12">
-          <p className="text-2xl md:text-4xl font-cyber text-neon-green glow-text tracking-widest uppercase">
+        <div className="h-16 sm:h-12 md:h-16 flex items-center justify-center mb-12 w-full px-2">
+          <p className="text-xl sm:text-2xl md:text-4xl font-cyber text-neon-green glow-text tracking-widest uppercase text-center min-h-[3rem] sm:min-h-[2rem]">
             {typingText}
             <span className="animate-pulse">_</span>
           </p>
@@ -134,7 +124,7 @@ export default function Home() {
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 1, duration: 0.8 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-5xl"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 w-full max-w-5xl"
         >
           {[
             { title: "Explore", href: "/about", icon: Shield, desc: "Discover our legacy" },
@@ -183,18 +173,18 @@ export default function Home() {
             <div className="w-24 h-1 bg-neon-green mx-auto glow-box"></div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
             {[
               { label: "Total Members", value: "128" },
               { label: "Server Rank", value: "#1" },
               { label: "Alliance Power", value: "850B+" },
               { label: "Victories", value: "9,999+" }
             ].map((stat, i) => (
-              <div key={i} className="glass-panel p-8 rounded-lg border border-white/5 text-center group hover:border-neon-green/50 transition-colors duration-300">
-                <div className="text-4xl md:text-5xl font-bold text-neon-green font-cyber mb-2 group-hover:glow-text">
+              <div key={i} className="glass-panel p-4 md:p-8 rounded-lg border border-white/5 text-center group hover:border-neon-green/50 transition-colors duration-300">
+                <div className="text-2xl sm:text-3xl md:text-5xl font-bold text-neon-green font-cyber mb-2 group-hover:glow-text">
                   {stat.value}
                 </div>
-                <div className="text-sm text-gray-400 uppercase tracking-widest">{stat.label}</div>
+                <div className="text-xs sm:text-sm text-gray-400 uppercase tracking-widest">{stat.label}</div>
               </div>
             ))}
           </div>

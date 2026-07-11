@@ -42,14 +42,14 @@ export default function ThreeBackground() {
   return (
     <div className="fixed inset-0 z-[-1] bg-black">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#0a0a1a] via-black to-black opacity-80 mix-blend-multiply z-10 pointer-events-none"></div>
-      <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 75 }} dpr={[1, 1.5]}>
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} color="#00ff66" intensity={2} />
         <pointLight position={[-10, -10, -10]} color="#a855f7" intensity={1} />
 
-        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-        <Sparkles count={200} scale={12} size={2} speed={0.4} opacity={0.2} color="#00ff66" />
-        <Sparkles count={100} scale={10} size={3} speed={0.2} opacity={0.1} color="#a855f7" />
+        <Stars radius={100} depth={50} count={2500} factor={4} saturation={0} fade speed={1} />
+        <Sparkles count={100} scale={12} size={2} speed={0.4} opacity={0.2} color="#00ff66" />
+        <Sparkles count={50} scale={10} size={3} speed={0.2} opacity={0.1} color="#a855f7" />
 
         <Nebula />
         <Grid />
