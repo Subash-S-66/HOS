@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0A0A0C; /* Void Black */
+  --foreground: #B8B8B8; /* Ash Grey */
+}
+
+@theme inline {
+  --color-void-black: #0A0A0C;
+  --color-blood-crimson: #8B0000;
+  --color-blood-crimson-light: #C41E1E;
+  --color-imperial-gold: #D4AF37;
+  --color-imperial-gold-light: #F4C430;
+  --color-ember-orange: #FF4500;
+  --color-ash-grey: #B8B8B8;
+  --color-alliance-green: #39FF14;
+  --color-rival-red: #FF2E2E;
+
+  --font-cinzel: var(--font-cinzel);
+  --font-rajdhani: var(--font-rajdhani);
+  --font-inter: var(--font-inter);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.6;
+    filter: brightness(0.8);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    border-color: transparent;
+  }
+}
+
+/* Custom Scrollbar for the dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0C;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4AF37;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #F4C430;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
