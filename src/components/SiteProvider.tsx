@@ -31,6 +31,10 @@ type SettingsResponse = {
   footer?: string;
   primaryColor?: string;
   galleryUploadsPer10Min?: number;
+  recruitmentEmailSenderName?: string;
+  recruitmentEmailReceiver?: string;
+  recruitmentEmailLimitPer30Min?: number;
+  chatMessagesLimitPerMin?: number;
 };
 
 const SiteContext = createContext<{
@@ -73,6 +77,10 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
         footer: settings.footer ?? current.footer,
         primaryColor: settings.primaryColor ?? current.primaryColor,
         galleryUploadsPer10Min: Number(settings.galleryUploadsPer10Min ?? current.galleryUploadsPer10Min ?? 2),
+        recruitmentEmailSenderName: settings.recruitmentEmailSenderName ?? current.recruitmentEmailSenderName,
+        recruitmentEmailReceiver: settings.recruitmentEmailReceiver ?? current.recruitmentEmailReceiver,
+        recruitmentEmailLimitPer30Min: Number(settings.recruitmentEmailLimitPer30Min ?? current.recruitmentEmailLimitPer30Min ?? 2),
+        chatMessagesLimitPerMin: Number(settings.chatMessagesLimitPerMin ?? current.chatMessagesLimitPerMin ?? 30),
         tools: tools.map((tool) => ({
           id: tool.toolId,
           title: tool.title,

@@ -7,28 +7,25 @@ import { Menu, Shield, X } from "lucide-react";
 import { useState } from "react";
 import { useSiteConfig } from "@/components/SiteProvider";
 
-const links = [
-  { title: "Home", href: "/" },
-  { title: "Members", href: "https://svs.info/server/1895/alliance/hos", external: true },
-  { title: "SVS History", href: "/svs-history" },
-  { title: "Gallery", href: "/gallery" },
-  { title: "Events", href: "/events" },
-  { title: "Tools", href: "/tools" },
-  { title: "Chat", href: "/chat" },
-  { title: "Join HOS", href: "/join" },
-] as const;
-
 export default function SiteHeader() {
   const pathname = usePathname();
   if (pathname.startsWith("/admin")) return null;
 
   const { config } = useSiteConfig();
   const [menuOpen, setMenuOpen] = useState(false);
-  const socialLinks = [
-    { title: "YouTube", href: config.youtubeUrl },
-    { title: "Discord", href: config.discordUrl },
-  ].filter((link): link is { title: string; href: string } => Boolean(link.href));
-  const allLinks = [...links, ...socialLinks];
+
+  const allLinks = [
+    { title: "Home", href: "/" },
+    { title: "Tools", href: "/tools" },
+    { title: "Events", href: "/events" },
+    { title: "Chat", href: "/chat" },
+    { title: "Gallery", href: "/gallery" },
+    ...(config.youtubeUrl ? [{ title: "YouTube", href: config.youtubeUrl, external: true }] : []),
+    { title: "Join HOS", href: "/join" },
+    { title: "Members", href: "https://svs.info/server/1895/alliance/hos", external: true },
+    { title: "SVS History", href: "/svs-history" },
+    ...(config.discordUrl ? [{ title: "Discord", href: config.discordUrl, external: true }] : []),
+  ];
 
   const navigationLinks = (mobile = false) => allLinks.map((link) => {
     const external = "external" in link ? Boolean(link.external) : link.href.startsWith("http");

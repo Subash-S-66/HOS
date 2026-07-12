@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const { body, param, query } = require('express-validator');
 const cloudinary = require('cloudinary').v2;
 const nodemailer = require('nodemailer');
@@ -17,7 +18,7 @@ const {
   AssistantMessage,
   SVSHistory,
 } = require('./models');
-const { jwtSecret, cloudinary: cloudinaryConfig, mail } = require('./config');
+const { jwtSecret, cloudinary: cloudinaryConfig, mail, clientOrigin } = require('./config');
 const { validate, adminOnly } = require('./middleware');
 
 const router = express.Router();
@@ -54,6 +55,10 @@ const normalizeSite = (settings = {}) => ({
   discordLink: settings.discordLink,
   primaryColor: settings.primaryColor,
   galleryUploadsPer10Min: settings.galleryUploadsPer10Min,
+  recruitmentEmailSenderName: settings.recruitmentEmailSenderName || 'HOS Recruitment',
+  recruitmentEmailReceiver: settings.recruitmentEmailReceiver || '',
+  recruitmentEmailLimitPer30Min: settings.recruitmentEmailLimitPer30Min || 2,
+  chatMessagesLimitPerMin: settings.chatMessagesLimitPerMin || 30,
 });
 
 const buildSitePatch = (payload) => {
@@ -68,6 +73,24 @@ const buildSitePatch = (payload) => {
     const count = Number(payload.galleryUploadsPer10Min);
     if (Number.isFinite(count) && count >= 1 && count <= 20) {
       patch.galleryUploadsPer10Min = Math.floor(count);
+    }
+  }
+  if (typeof payload.recruitmentEmailSenderName === 'string') {
+    patch.recruitmentEmailSenderName = payload.recruitmentEmailSenderName;
+  }
+  if (typeof payload.recruitmentEmailReceiver === 'string') {
+    patch.recruitmentEmailReceiver = payload.recruitmentEmailReceiver;
+  }
+  if (payload.recruitmentEmailLimitPer30Min !== undefined) {
+    const count = Number(payload.recruitmentEmailLimitPer30Min);
+    if (Number.isFinite(count) && count >= 1 && count <= 20) {
+      patch.recruitmentEmailLimitPer30Min = Math.floor(count);
+    }
+  }
+  if (payload.chatMessagesLimitPerMin !== undefined) {
+    const count = Number(payload.chatMessagesLimitPerMin);
+    if (Number.isFinite(count) && count >= 5 && count <= 120) {
+      patch.chatMessagesLimitPerMin = Math.floor(count);
     }
   }
   return patch;
@@ -85,8 +108,17 @@ const mapTool = (tool, index) => ({
   enabled: tool.enabled !== undefined ? Boolean(tool.enabled) : true,
 });
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 5, // Limit each IP to 5 requests per window
+  message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+});
+
 router.post(
   '/auth/login',
+  loginLimiter,
   [
     body('username').isString().trim().isLength({ min: 3, max: 80 }),
     body('password').isString().isLength({ min: 8, max: 200 }),
@@ -119,6 +151,7 @@ router.post(
 
 router.put(
   '/admin/config',
+  adminOnly,
   asyncRoute(async (req, res) => {
     const payload = req.body || {};
     const sitePatch = buildSitePatch(payload);
@@ -263,11 +296,14 @@ router.put(
 
 router.get(
   '/messages',
-  asyncRoute(async (_req, res) => {
+  asyncRoute(async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const skip = Number(req.query.skip) || 0;
     const items = await Message.find()
       .populate('userId', 'gameName serverNumber allianceName')
       .sort({ createdAt: -1 })
-      .limit(100)
+      .skip(skip)
+      .limit(limit)
       .lean();
 
     res.json(
@@ -343,6 +379,29 @@ router.post(
   }),
 );
 
+router.delete(
+  '/gallery/:id',
+  adminOnly,
+  asyncRoute(async (req, res) => {
+    const { id } = req.params;
+    const image = await Gallery.findById(id);
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    try {
+      if (image.publicId) {
+        await cloudinary.uploader.destroy(image.publicId);
+      }
+    } catch (err) {
+      console.error('Failed to delete image from Cloudinary:', err);
+    }
+
+    await Gallery.findByIdAndDelete(id);
+    res.json({ ok: true });
+  }),
+);
+
 router.get(
   '/events',
   asyncRoute(async (_req, res) => {
@@ -411,18 +470,42 @@ router.post(
   '/applications',
   [
     body('playerName').isString().trim().isLength({ min: 1, max: 60 }),
-    body('gameName').isString().trim().isLength({ min: 1, max: 60 }),
-    body('server').isString().trim().isLength({ min: 1, max: 12 }),
-    body('alliance').isString().trim().isLength({ min: 1, max: 40 }),
-    body('power').isString().trim().isLength({ min: 1, max: 30 }),
+    body('server').optional({ checkFalsy: true }).isString().trim().isLength({ max: 12 }),
+    body('alliance').optional({ checkFalsy: true }).isString().trim().isLength({ max: 40 }),
+    body('power').optional({ checkFalsy: true }).isString().trim().isLength({ max: 30 }),
+    body('discord').optional({ checkFalsy: true }).isString().trim().isLength({ max: 200 }),
     body('email').isEmail().normalizeEmail(),
+    body('message').isString().trim().isLength({ min: 1, max: 2000 }),
   ],
   validate,
   asyncRoute(async (req, res) => {
-    const application = await Application.create(req.body);
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    const site = await Settings.findOne({ key: 'site' }).lean();
+    const limit = site?.recruitmentEmailLimitPer30Min !== undefined ? site.recruitmentEmailLimitPer30Min : 2;
+
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const count = await Application.countDocuments({
+      ipAddress: ip,
+      createdAt: { $gte: thirtyMinAgo },
+    });
+
+    if (count >= limit) {
+      return res.status(429).json({
+        error: `Submission limit reached. You can only submit ${limit} applications per 30 minutes.`,
+      });
+    }
+
+    const application = await Application.create({
+      ...req.body,
+      ipAddress: ip,
+    });
     await tally('applications');
 
-    if (mail.host && mail.user && mail.pass && mail.to) {
+    const senderName = site?.recruitmentEmailSenderName || 'HOS Recruitment';
+    const receiverEmail = site?.recruitmentEmailReceiver || mail.to;
+
+    if (mail.host && mail.user && mail.pass && receiverEmail) {
       const transporter = nodemailer.createTransport({
         host: mail.host,
         port: mail.port,
@@ -430,12 +513,126 @@ router.post(
         auth: { user: mail.user, pass: mail.pass },
       });
 
+      const themeColor = site?.primaryColor || '#00f3ff';
+
+      // 1. Send details to leadership
       await transporter.sendMail({
-        from: mail.user,
-        to: mail.to,
-        subject: `New HOS application: ${application.playerName}`,
-        text: `Server: ${application.server}\nPower: ${application.power}\nEmail: ${application.email}\n\n${application.message}`,
+        from: `"${senderName}" <${mail.user}>`,
+        to: receiverEmail,
+        replyTo: application.email,
+        subject: `New HOS Recruitment Application: ${application.playerName}`,
+        html: `
+          <div style="background-color: #09090b; color: #fafafa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 24px; border: 1px solid ${themeColor}; border-radius: 16px; max-width: 600px; margin: 0 auto;">
+            <div style="text-align: center; border-bottom: 1px solid #27272a; padding-bottom: 16px; margin-bottom: 24px;">
+              <h1 style="color: ${themeColor}; font-size: 24px; font-weight: bold; letter-spacing: 2px; margin: 0;">HOS RECRUITMENT</h1>
+              <p style="color: #a1a1aa; font-size: 12px; margin: 4px 0 0 0;">New Application Submitted</p>
+            </div>
+            <div style="margin-bottom: 24px;">
+              <h2 style="color: #ffffff; font-size: 16px; font-weight: bold; margin-bottom: 12px; border-left: 3px solid ${themeColor}; padding-left: 8px;">PLAYER PROFILE</h2>
+              <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0; width: 150px;">Player Name:</td>
+                  <td style="color: #ffffff; font-weight: bold; padding: 6px 0;">${application.playerName}</td>
+                </tr>
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0;">Email:</td>
+                  <td style="color: #ffffff; padding: 6px 0;">${application.email}</td>
+                </tr>
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Server:</td>
+                  <td style="color: #ffffff; padding: 6px 0;">${application.server || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Alliance:</td>
+                  <td style="color: #ffffff; padding: 6px 0;">${application.alliance || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Power:</td>
+                  <td style="color: #ffffff; padding: 6px 0;">${application.power || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <td style="color: #a1a1aa; padding: 6px 0;">Discord URL:</td>
+                  <td style="color: #ffffff; padding: 6px 0;"><a href="${application.discord || '#'}" style="color: ${themeColor}; text-decoration: none;">${application.discord || 'N/A'}</a></td>
+                </tr>
+              </table>
+            </div>
+            <div style="margin-bottom: 24px;">
+              <h2 style="color: #ffffff; font-size: 16px; font-weight: bold; margin-bottom: 12px; border-left: 3px solid ${themeColor}; padding-left: 8px;">APPLICANT MESSAGE</h2>
+              <div style="background-color: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.6; color: #e4e4e7; white-space: pre-wrap;">${application.message}</div>
+            </div>
+            <div style="text-align: center; border-top: 1px solid #27272a; padding-top: 16px; font-size: 12px; color: #71717a;">
+              To reply to this applicant directly, simply hit Reply to this email notification.
+            </div>
+          </div>
+        `,
       });
+
+      // 2. Send confirmation receipt to applicant
+      try {
+        await transporter.sendMail({
+          from: `"${senderName}" <${mail.user}>`,
+          to: application.email,
+          subject: `HOS Application Confirmation - ${application.playerName}`,
+          html: `
+            <div style="background-color: #09090b; color: #fafafa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 24px; border: 1px solid ${themeColor}; border-radius: 16px; max-width: 600px; margin: 0 auto;">
+              <div style="text-align: center; border-bottom: 1px solid #27272a; padding-bottom: 16px; margin-bottom: 24px;">
+                <h1 style="color: ${themeColor}; font-size: 24px; font-weight: bold; letter-spacing: 2px; margin: 0;">APPLICATION RECEIVED</h1>
+                <p style="color: #a1a1aa; font-size: 12px; margin: 4px 0 0 0;">Thank you for applying to House Of Spanking</p>
+              </div>
+              <div style="font-size: 14px; line-height: 1.6; color: #e4e4e7; margin-bottom: 24px;">
+                <p>Hello <strong>${application.playerName}</strong>,</p>
+                <p>This is an automated confirmation that your recruitment application has been successfully received by the HOS leadership team.</p>
+                <p>We will review your details and respond to you within 24 hours.</p>
+              </div>
+              
+              <div style="margin-bottom: 28px;">
+                <h2 style="color: #ffffff; font-size: 15px; font-weight: bold; margin-bottom: 12px; border-left: 3px solid ${themeColor}; padding-left: 8px;">EXPLORE OUR ALLIANCE SITE</h2>
+                <p style="font-size: 12px; color: #a1a1aa; margin-top: -6px; margin-bottom: 12px;">Check out our tools, chat, and scheduled events while we review your details:</p>
+                <div style="margin-top: 12px;">
+                  <a href="${clientOrigin}" style="display: inline-block; background-color: ${themeColor}15; color: ${themeColor}; border: 1px solid ${themeColor}40; border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; margin-right: 6px; margin-bottom: 6px;">Home</a>
+                  <a href="${clientOrigin}/chat" style="display: inline-block; background-color: ${themeColor}15; color: ${themeColor}; border: 1px solid ${themeColor}40; border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; margin-right: 6px; margin-bottom: 6px;">Chat</a>
+                  <a href="${clientOrigin}/events" style="display: inline-block; background-color: ${themeColor}15; color: ${themeColor}; border: 1px solid ${themeColor}40; border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; margin-right: 6px; margin-bottom: 6px;">Events</a>
+                  <a href="${clientOrigin}/tools" style="display: inline-block; background-color: ${themeColor}15; color: ${themeColor}; border: 1px solid ${themeColor}40; border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; margin-right: 6px; margin-bottom: 6px;">Tools</a>
+                  <a href="${clientOrigin}/gallery" style="display: inline-block; background-color: ${themeColor}15; color: ${themeColor}; border: 1px solid ${themeColor}40; border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; margin-bottom: 6px;">Gallery</a>
+                </div>
+              </div>
+
+              <div style="margin-bottom: 24px; border-top: 1px solid #27272a; padding-top: 20px;">
+                <h2 style="color: #ffffff; font-size: 16px; font-weight: bold; margin-bottom: 12px; border-left: 3px solid ${themeColor}; padding-left: 8px;">YOUR APPLICATION DETAILS</h2>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px;">
+                  <tr>
+                    <td style="color: #a1a1aa; padding: 6px 0; width: 150px;">Player Name:</td>
+                    <td style="color: #ffffff; font-weight: bold; padding: 6px 0;">${application.playerName}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Server:</td>
+                    <td style="color: #ffffff; padding: 6px 0;">${application.server || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Alliance:</td>
+                    <td style="color: #ffffff; padding: 6px 0;">${application.alliance || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #a1a1aa; padding: 6px 0;">Current/Old Power:</td>
+                    <td style="color: #ffffff; padding: 6px 0;">${application.power || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="color: #a1a1aa; padding: 6px 0;">Discord URL:</td>
+                    <td style="color: #ffffff; padding: 6px 0;"><a href="${application.discord || '#'}" style="color: ${themeColor}; text-decoration: none;">${application.discord || 'N/A'}</a></td>
+                  </tr>
+                </table>
+                <div style="background-color: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6; color: #d4d4d8; white-space: pre-wrap;"><strong>Your Message:</strong><br/>${application.message}</div>
+              </div>
+
+              <div style="text-align: center; border-top: 1px solid #27272a; padding-top: 16px; font-size: 12px; color: #71717a;">
+                Best regards,<br/><strong>${senderName} Team</strong>
+              </div>
+            </div>
+          `,
+        });
+      } catch (confirmErr) {
+        console.error('Failed to send confirmation email to applicant:', confirmErr);
+      }
     }
 
     res.status(201).json({ id: application.id });

@@ -88,18 +88,29 @@ if (require.main === module) {
   io.on('connection', (socket) => {
     let user;
     let lastMessageAt = 0;
+    let messageTimestamps = [];
     socket.on('profile', async (profile, reply) => {
       try {
+        console.log('[Socket] Profile registration requested:', profile);
         const gameName = cleanText(profile?.gameName, 40),
-              serverNumber = cleanText(profile?.serverNumber, 12),
-              allianceName = cleanText(profile?.allianceName, 40);
+              serverNumber = cleanText(profile?.serverNumber, 4),
+              allianceName = cleanText(profile?.allianceName, 3);
+        console.log('[Socket] Cleaned profile fields:', { gameName, serverNumber, allianceName });
+        
         if (!gameName || !serverNumber || !allianceName) throw new Error('Invalid profile');
+
+        if (!/^\d{1,4}$/.test(serverNumber)) throw new Error('Server number must be a number with a maximum of 4 digits');
+        if (!/^[a-zA-Z]{3}$/.test(allianceName)) throw new Error('Alliance name must be exactly 3 letters');
+
         user = await createChatUser({ gameName, serverNumber, allianceName, socketId: socket.id });
+        console.log('[Socket] Registered user in DB:', user);
+        
         online.set(socket.id, user);
         io.emit('online-users', online.size);
         reply?.({ ok: true, user: { id: user.id, gameName, serverNumber, allianceName } });
-      } catch {
-        reply?.({ ok: false, error: 'Invalid profile' });
+      } catch (err) {
+        console.error('[Socket] Profile registration failed:', err);
+        reply?.({ ok: false, error: err.message || 'Invalid profile' });
       }
     });
     socket.on('typing', (typing) => {
@@ -107,11 +118,26 @@ if (require.main === module) {
     });
     socket.on('message', async (content, reply) => {
       try {
-        if (Date.now() - lastMessageAt < 750) throw new Error('Please slow down');
+        console.log('[Socket] Message received. Content:', content, 'Socket User:', user);
+        if (Date.now() - lastMessageAt < 2000) throw new Error('Please slow down');
         if (!user) throw new Error('Profile required');
+
+        const now = Date.now();
+        messageTimestamps = messageTimestamps.filter((t) => now - t < 60 * 1000);
+
+        const site = await Settings.findOne({ key: 'site' }).lean();
+        const limit = site?.chatMessagesLimitPerMin !== undefined ? site.chatMessagesLimitPerMin : 30;
+
+        if (messageTimestamps.length >= limit) {
+          throw new Error(`You have reached the limit of ${limit} messages per minute. Please wait before sending more.`);
+        }
+
         const value = cleanText(content, 1000);
         if (!value) throw new Error('Invalid message');
-        lastMessageAt = Date.now();
+        
+        lastMessageAt = now;
+        messageTimestamps.push(now);
+
         const message = await Message.create({ userId: user._id, content: value });
         await tally('messages');
         const payload = {

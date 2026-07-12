@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, X, Send } from "lucide-react";
 import { api } from "@/lib/api";
@@ -17,17 +17,16 @@ type AssistantRow = {
 };
 
 const QA_DATABASE = {
-  "About HOS": "House of Spanking (HOS) is a premier, dominating alliance on Server 1895. Built for absolute victory, HOS oversees server-wide operations, guides command strategies, and coordinates defensive and offensive operations during critical events like Server-vs-Server (SvS) battles.",
-  "Home Page": "The Landing Page (/) serves as the main command terminal for the alliance. It introduces HOS, spotlights featured recruits and activities, displays current server milestones, and links out to all tactical alliance databases.",
-  "Chat Room": "The Chat Page (/chat) is a real-time communications terminal. Utilizing WebSockets, it allows all registered commanders to chat securely and instantaneously about tactics, alerts, and coordinates.",
-  "Events": "The Events Page (/events) lists scheduled alliance matches, campaigns, and rallies. It features dynamic countdown timers synced to UTC, helping players coordinate times accurately across global timezones.",
-  "Gallery": "The Gallery Page (/gallery) is our historical visual archive. Commanders upload and share screenshots of epic battles, war reports, base architectures, and memorable community moments.",
-  "Join Us": "The Join Page (/join) hosts our recruitment portal. Prospective members submit details about their power metrics and servers, which are saved in the system database for recruiter review.",
-  "Leaderboard": "The Leaderboard Page (/leaderboard) ranks alliance members based on performance metrics, power levels, contributions, and historical battle rankings to foster competitive growth.",
-  "Members": "The Members Page (/members) lists the active alliance roster. It shows commander IDs, server numbers, ranks, and tracks their 'last seen online' status to manage activity levels.",
-  "SVS History": "The SVS History Page (/svs-history) archives Server vs. Server campaigns. It records scores, outcomes, and provides historical battle log links for Server 1895.",
-  "Tools": "The Tools Page (/tools) is a utility hub. It features specialized calculators and tools designed to optimize resource usage, troop training ratios, and battle power scaling.",
-  "War Planner": "The War Page (/war) represents our tactical battle map. Roster leaders post target coordinates, squad paths, and strategic plans to outline clear operations instructions."
+  "About HOS": "House of Spanking (HOS) is a top alliance on Server 1895. We work together to win events, guide server strategies, and coordinate attack and defense plans during Server vs Server (SvS) wars. Our goal is absolute victory and fun!",
+  "Home Page": "Our home page is the main dashboard for our alliance. Here you can find out about HOS, see our current server milestones, look at featured players, and easily access all other sections of our site.",
+  "Chat Room": "Our Chat room is where alliance members can talk in real-time. It's a secure place to chat about game tactics, share coordinates, or just hang out and get to know fellow commanders.",
+  "Events": "The Events page lists all our scheduled alliance events, matches, and rallies. It has automatic countdown timers so you know exactly when an event starts, no matter what timezone you live in.",
+  "Gallery": "The Gallery is where members share screenshots. You can upload and view images of epic battle reports, base designs, and fun community moments.",
+  "Join Us": "The Join Us page is our recruitment form. If you want to join HOS, just fill in your details (like player name, server, and power level) here, and our leaders will review it.",
+  "Members": "The Members page lists our active roster. You can see who is in the alliance, check their server and rank, and see when they were last online.",
+  "SVS History": "The SVS History page is our archive of Server vs. Server campaigns. You can check out past scores, see how our server performed, and access links to old battle records.",
+  "Tools": "The Tools page is a helpful collection of calculators. We build tools here to help players optimize resource use, plan troop training, and calculate power upgrades.",
+  "Youtube": "Check out our official YouTube channel! We stream our battlefield fights and Server vs Server (SvS) matches here."
 };
 
 const initialMessage: ChatItem = {
@@ -52,6 +51,9 @@ export default function AIAssistant() {
   const [chatHistory, setChatHistory] = useState<ChatItem[]>([initialMessage]);
   const [sessionId] = useState(getSessionId);
 
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // 1. Fetch historical assistant messages
   useEffect(() => {
     if (!sessionId) return;
 
@@ -62,6 +64,15 @@ export default function AIAssistant() {
       })
       .catch(() => {});
   }, [sessionId]);
+
+  // 2. Scroll to bottom whenever history updates or chat opens
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatHistory, isOpen]);
 
   const persist = (entry: ChatItem) => {
     if (!sessionId) return;
@@ -104,7 +115,7 @@ export default function AIAssistant() {
       );
       const reply = matchedKey
         ? QA_DATABASE[matchedKey as keyof typeof QA_DATABASE]
-        : `I have received your query regarding "${text}". The databanks are currently being updated, but HOS continues to dominate Server 1895.`;
+        : `I have received your query regarding "${text}". The databanks are currently being updated, try using quick messages for now.`;
 
       const aiEntry: ChatItem = { role: "ai", content: reply };
       setChatHistory((current) => [...current, aiEntry]);
@@ -148,6 +159,7 @@ export default function AIAssistant() {
               </button>
             </div>
 
+            {/* Scrollable messages container */}
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
               {renderedHistory.map((msg, index) => (
                 <div key={`${msg.role}-${index}`} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -162,11 +174,12 @@ export default function AIAssistant() {
                   </div>
                 </div>
               ))}
+              <div ref={chatEndRef} />
             </div>
 
-            {/* Quick action default questions */}
-            <div 
-              className="flex gap-1.5 overflow-x-auto px-4 py-2 border-t border-neon-purple/10 bg-black/20"
+            {/* Quick action default questions - scroll horizontally on mobile/tablet, wrap on desktop */}
+            <div
+              className="flex flex-nowrap overflow-x-auto gap-1.5 px-4 py-2 border-t border-neon-purple/10 bg-black/20 md:flex-wrap md:overflow-y-auto md:max-h-[96px]"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
               {Object.keys(QA_DATABASE).map((key) => (

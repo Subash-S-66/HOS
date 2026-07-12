@@ -30,11 +30,14 @@ export default function Home() {
       .filter((value) => value.length > 0),
   ].filter((value, index, all) => all.indexOf(value) === index);
   const navItems: { title: string; icon: LucideIcon; href: string; external?: boolean; unavailable?: boolean }[] = [
-    { title: "Members", icon: Users, href: "https://svs.info/server/1895/alliance/hos", external: true },
-    { title: "SVS History", icon: History, href: "/svs-history" }, { title: "Gallery", icon: ImageIcon, href: "/gallery" },
-    { title: "Events", icon: Calendar, href: "/events" }, { title: "Tools", icon: Wrench, href: "/tools" },
-    { title: "Chat", icon: MessageSquare, href: "/chat" }, { title: "Join HOS", icon: UserPlus, href: "/join" },
+    { title: "Tools", icon: Wrench, href: "/tools" },
+    { title: "Events", icon: Calendar, href: "/events" },
+    { title: "Chat", icon: MessageSquare, href: "/chat" },
+    { title: "Gallery", icon: ImageIcon, href: "/gallery" },
     { title: "YouTube", icon: Video, href: config.youtubeUrl || "#", external: Boolean(config.youtubeUrl), unavailable: !config.youtubeUrl },
+    { title: "Join HOS", icon: UserPlus, href: "/join" },
+    { title: "Members", icon: Users, href: "https://svs.info/server/1895/alliance/hos", external: true },
+    { title: "SVS History", icon: History, href: "/svs-history" },
     { title: "Discord", icon: Gamepad2, href: config.discordUrl || "#", external: Boolean(config.discordUrl), unavailable: !config.discordUrl },
   ];
 

@@ -3,6 +3,10 @@ export type SiteConfig = {
   title: string; banner: string; youtubeUrl: string; discordUrl: string;
   primaryColor: string; footer: string; galleryUploadsPer10Min: number;
   tools: Tool[]; svsHistory: { label: string; url: string; date: string }[];
+  recruitmentEmailSenderName: string;
+  recruitmentEmailReceiver: string;
+  recruitmentEmailLimitPer30Min: number;
+  chatMessagesLimitPerMin: number;
 };
 
 const svs = Array.from({ length: 10 }, (_, index) => ({
@@ -15,6 +19,10 @@ export const defaultSiteConfig: SiteConfig = {
   title: "House Of Spanking", banner: "Power through unity · Server 1895",
   youtubeUrl: "", discordUrl: "", primaryColor: "#00f3ff",
   footer: "House Of Spanking · Server 1895", galleryUploadsPer10Min: 2, svsHistory: svs,
+  recruitmentEmailSenderName: "HOS Recruitment",
+  recruitmentEmailReceiver: "",
+  recruitmentEmailLimitPer30Min: 2,
+  chatMessagesLimitPerMin: 30,
   tools: [
     { id: "svs", title: "SVS Intelligence", description: "Track Server vs Server performance and reports.", icon: "FaShieldHalved", color: "#00f3ff", category: "War", order: 1, link: "/svs-history", enabled: true, visible: true },
     { id: "members", title: "Alliance Roster", description: "Open the official HOS member directory.", icon: "FaUsers", color: "#39ff14", category: "Alliance", order: 2, link: "https://svs.info/server/1895/alliance/hos", enabled: true, visible: true },

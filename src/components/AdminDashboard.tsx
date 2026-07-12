@@ -17,8 +17,11 @@ import {
   Users,
   Wrench,
   X,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import * as FaIcons from "react-icons/fa6";
+import { motion, AnimatePresence } from "framer-motion";
 import { useSiteConfig } from "@/components/SiteProvider";
 import { api } from "@/lib/api";
 import type { SiteConfig, Tool } from "@/lib/site-config";
@@ -171,15 +174,22 @@ function Field({
   label,
   value,
   onChange,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label className="text-sm text-zinc-300">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className={input} />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className={input}
+      />
     </label>
   );
 }
@@ -189,24 +199,27 @@ function SectionActions({
   onSave,
   onReset,
   saveLabel = "Save section",
+  primaryColor,
 }: {
   canSave: boolean;
   onSave: () => void;
   onReset: () => void;
   saveLabel?: string;
+  primaryColor?: string;
 }) {
   return (
     <div className="mt-4 flex items-center justify-end gap-2">
       <button
         onClick={onReset}
-        className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/5"
+        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/5"
       >
         Reset
       </button>
       <button
         onClick={onSave}
         disabled={!canSave}
-        className="rounded-lg bg-hos-red px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        style={primaryColor ? { backgroundColor: primaryColor } : undefined}
+        className="rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {saveLabel}
       </button>
@@ -225,6 +238,18 @@ const mergeSiteConfig = (current: SiteConfig, payload: Record<string, unknown>):
   if (typeof payload.primaryColor === "string") next.primaryColor = payload.primaryColor;
   if (typeof payload.galleryUploadsPer10Min === "number") {
     next.galleryUploadsPer10Min = payload.galleryUploadsPer10Min;
+  }
+  if (typeof payload.recruitmentEmailSenderName === "string") {
+    next.recruitmentEmailSenderName = payload.recruitmentEmailSenderName;
+  }
+  if (typeof payload.recruitmentEmailReceiver === "string") {
+    next.recruitmentEmailReceiver = payload.recruitmentEmailReceiver;
+  }
+  if (typeof payload.recruitmentEmailLimitPer30Min === "number") {
+    next.recruitmentEmailLimitPer30Min = payload.recruitmentEmailLimitPer30Min;
+  }
+  if (typeof payload.chatMessagesLimitPerMin === "number") {
+    next.chatMessagesLimitPerMin = payload.chatMessagesLimitPerMin;
   }
   if (Array.isArray(payload.tools)) next.tools = payload.tools as Tool[];
   if (Array.isArray(payload.svsHistory)) {
@@ -246,6 +271,10 @@ const buildPayload = (section: SectionName, draft: SiteConfig): Record<string, u
       galleryUploadsPer10Min: draft.galleryUploadsPer10Min,
       tools: draft.tools,
       svsHistory: draft.svsHistory,
+      recruitmentEmailSenderName: draft.recruitmentEmailSenderName,
+      recruitmentEmailReceiver: draft.recruitmentEmailReceiver,
+      recruitmentEmailLimitPer30Min: draft.recruitmentEmailLimitPer30Min,
+      chatMessagesLimitPerMin: draft.chatMessagesLimitPerMin,
     };
   }
 
@@ -256,6 +285,10 @@ const buildPayload = (section: SectionName, draft: SiteConfig): Record<string, u
       footer: draft.footer,
       youtubeUrl: draft.youtubeUrl,
       discordUrl: draft.discordUrl,
+      recruitmentEmailSenderName: draft.recruitmentEmailSenderName,
+      recruitmentEmailReceiver: draft.recruitmentEmailReceiver,
+      recruitmentEmailLimitPer30Min: draft.recruitmentEmailLimitPer30Min,
+      chatMessagesLimitPerMin: draft.chatMessagesLimitPerMin,
     };
   }
 
@@ -275,7 +308,11 @@ const hasSectionChanges = (section: SectionName, config: SiteConfig, draft: Site
       config.banner !== draft.banner ||
       config.footer !== draft.footer ||
       config.youtubeUrl !== draft.youtubeUrl ||
-      config.discordUrl !== draft.discordUrl
+      config.discordUrl !== draft.discordUrl ||
+      config.recruitmentEmailSenderName !== draft.recruitmentEmailSenderName ||
+      config.recruitmentEmailReceiver !== draft.recruitmentEmailReceiver ||
+      config.recruitmentEmailLimitPer30Min !== draft.recruitmentEmailLimitPer30Min ||
+      config.chatMessagesLimitPerMin !== draft.chatMessagesLimitPerMin
     );
   }
 
@@ -292,7 +329,62 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [active, setActive] = useState<SectionName>("Dashboard");
   const [draft, setDraft] = useState<SiteConfig>(config);
   const [status, setStatus] = useState("");
+
+  // Auto-clear status message after 3 seconds
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => {
+      setStatus("");
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
   const [range, setRange] = useState<RangeFilter>("today");
+
+  // Confirmation Modal state
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const showConfirm = ({
+    title,
+    message,
+    confirmLabel = "Confirm",
+    cancelLabel = "Cancel",
+    isDestructive = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void | Promise<void>;
+  }) => {
+    setConfirmState({
+      isOpen: true,
+      title,
+      message,
+      confirmLabel,
+      cancelLabel,
+      isDestructive,
+      onConfirm: () => {
+        void Promise.resolve(onConfirm()).catch(() => {});
+        setConfirmState((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
   const [summary, setSummary] = useState<Summary>({
     range: "today",
     messages: 0,
@@ -317,6 +409,67 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [eventDescription, setEventDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventHidden, setEventHidden] = useState(false);
+
+  // Tool creation modal states
+  const [showToolModal, setShowToolModal] = useState(false);
+  const [toolTitle, setToolTitle] = useState("");
+  const [toolDescription, setToolDescription] = useState("");
+  const [toolCategory, setToolCategory] = useState("General");
+  const [toolIcon, setToolIcon] = useState("FaWrench");
+  const [toolColor, setToolColor] = useState(config.primaryColor || "#00f3ff");
+  const [toolOrder, setToolOrder] = useState(1);
+  const [toolLink, setToolLink] = useState("/tools");
+  const [toolVisible, setToolVisible] = useState(true);
+
+  const handleOpenToolModal = () => {
+    setToolTitle("");
+    setToolDescription("");
+    setToolCategory("General");
+    setToolIcon("FaWrench");
+    setToolColor(draft.primaryColor || "#00f3ff");
+    setToolOrder(draft.tools.length + 1);
+    setToolLink("/tools");
+    setToolVisible(true);
+    setShowToolModal(true);
+  };
+
+  const handleToolSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!toolTitle.trim()) {
+      setStatus("Please fill out the Tool Name.");
+      return;
+    }
+    const newTool = {
+      id: crypto.randomUUID(),
+      title: toolTitle.trim(),
+      description: toolDescription.trim(),
+      icon: toolIcon,
+      color: toolColor,
+      category: toolCategory.trim() || "General",
+      order: Number(toolOrder) || draft.tools.length + 1,
+      link: toolLink.trim() || "/tools",
+      enabled: true,
+      visible: toolVisible,
+    };
+    const updatedTools = [...draft.tools, newTool];
+
+    try {
+      await api<{ ok: boolean }>("/admin/config", {
+        method: "PUT",
+        body: JSON.stringify({ tools: updatedTools }),
+      });
+      setDraft((current) => ({
+        ...current,
+        tools: updatedTools,
+      }));
+      updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
+      setShowToolModal(false);
+      setStatus(`Created and saved tool "${toolTitle.trim()}" successfully.`);
+      await refreshConfig();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to automatically save new tool.");
+    }
+  };
 
   const loadEvents = async () => {
     setLoadingEvents(true);
@@ -348,17 +501,24 @@ export default function AdminDashboard({ username }: { username: string }) {
     setShowCreateModal(true);
   };
 
-  const handleDeleteEvent = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this event?")) return;
-    try {
-      await api(`/events/${id}`, {
-        method: "DELETE",
-      });
-      setStatus("Event deleted successfully.");
-      void loadEvents();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to delete event.");
-    }
+  const handleDeleteEvent = (id: string) => {
+    showConfirm({
+      title: "Delete Event",
+      message: "Are you sure you want to delete this event? This action cannot be undone.",
+      confirmLabel: "Delete",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api(`/events/${id}`, {
+            method: "DELETE",
+          });
+          setStatus("Event deleted successfully.");
+          void loadEvents();
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Failed to delete event.");
+        }
+      },
+    });
   };
 
   const handleEventSubmit = async (event: React.FormEvent) => {
@@ -448,7 +608,7 @@ export default function AdminDashboard({ username }: { username: string }) {
     }
   }, [active]);
 
-  const saveSection = async (section: SectionName) => {
+  const saveSection = (section: SectionName) => {
     const payload = buildPayload(section, draft);
     if (!payload) {
       setStatus(`${section} does not have persistent settings yet.`);
@@ -461,37 +621,52 @@ export default function AdminDashboard({ username }: { username: string }) {
       return;
     }
 
-    if (!window.confirm(`Save ${section} changes to database?`)) return;
+    showConfirm({
+      title: `Save ${section} Changes`,
+      message: `Are you sure you want to save your ${section} changes to the database?`,
+      confirmLabel: "Save",
+      onConfirm: async () => {
+        try {
+          await api<{ ok: boolean }>("/admin/config", {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
 
-    try {
-      await api<{ ok: boolean }>("/admin/config", {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
+          if (section === "Dashboard") {
+            updateConfig(draft);
+          } else {
+            updateConfig(mergeSiteConfig(config, payload));
+          }
 
-      if (section === "Dashboard") {
-        updateConfig(draft);
-      } else {
-        updateConfig(mergeSiteConfig(config, payload));
-      }
-
-      setStatus(`Saved ${section} changes to database.`);
-      await refreshConfig();
-      if (section === "SVS History") {
-        setSvsEditMode(false);
-      }
-      if (section === "Dashboard" || section === "Analytics") {
-        void loadSummary(range);
-      }
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : `Failed to save ${section}.`);
-    }
+          setStatus(`Saved ${section} changes to database.`);
+          await refreshConfig();
+          if (section === "SVS History") {
+            setSvsEditMode(false);
+          }
+          if (section === "Tools") {
+            setToolsEditMode(false);
+          }
+          if (section === "Dashboard" || section === "Analytics") {
+            void loadSummary(range);
+          }
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : `Failed to save ${section}.`);
+        }
+      },
+    });
   };
 
   const resetAll = () => {
-    if (!window.confirm("Discard unsaved changes?")) return;
-    setDraft(config);
-    setStatus("Changes reset.");
+    showConfirm({
+      title: "Discard Changes",
+      message: "Are you sure you want to discard all unsaved changes?",
+      confirmLabel: "Discard",
+      isDestructive: true,
+      onConfirm: () => {
+        setDraft(config);
+        setStatus("Changes reset.");
+      },
+    });
   };
 
   const alterTool = (id: string, patch: Partial<Tool>) => {
@@ -501,35 +676,71 @@ export default function AdminDashboard({ username }: { username: string }) {
     }));
   };
 
-  const addTool = () => {
-    setDraft((current) => ({
-      ...current,
-      tools: [
-        ...current.tools,
-        {
-          id: crypto.randomUUID(),
-          title: "New tool",
-          description: "Add a clear description.",
-          icon: "FaWrench",
-          color: current.primaryColor,
-          category: "General",
-          order: current.tools.length + 1,
-          link: "/tools",
-          enabled: true,
-          visible: true,
-        },
-      ],
-    }));
-  };
+
 
   const removeTool = (id: string) => {
-    setDraft((current) => ({
-      ...current,
-      tools: current.tools
-        .filter((tool) => tool.id !== id)
-        .sort((a, b) => a.order - b.order)
-        .map((tool, index) => ({ ...tool, order: index + 1 })),
-    }));
+    const tool = draft.tools.find((t) => t.id === id);
+    const toolTitle = tool ? tool.title : "this tool";
+
+    showConfirm({
+      title: "Delete Tool",
+      message: `Are you sure you want to delete "${toolTitle}"?`,
+      confirmLabel: "Delete",
+      isDestructive: true,
+      onConfirm: async () => {
+        const updatedTools = draft.tools
+          .filter((t) => t.id !== id)
+          .sort((a, b) => a.order - b.order)
+          .map((t, index) => ({ ...t, order: index + 1 }));
+
+        try {
+          await api<{ ok: boolean }>("/admin/config", {
+            method: "PUT",
+            body: JSON.stringify({ tools: updatedTools }),
+          });
+          setDraft((current) => ({
+            ...current,
+            tools: updatedTools,
+          }));
+          updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
+          setStatus(`Deleted and saved tool "${toolTitle}" successfully.`);
+          await refreshConfig();
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Failed to delete tool.");
+        }
+      },
+    });
+  };
+
+  const isToolEdited = (tool: Tool) => {
+    const original = config.tools.find((t) => t.id === tool.id);
+    if (!original) return true;
+    return (
+      original.title !== tool.title ||
+      original.description !== tool.description ||
+      original.icon !== tool.icon ||
+      original.color !== tool.color ||
+      original.category !== tool.category ||
+      original.order !== tool.order ||
+      original.link !== tool.link ||
+      original.enabled !== tool.enabled ||
+      original.visible !== tool.visible
+    );
+  };
+
+  const saveSingleTool = async (toolToSave: Tool) => {
+    const updatedTools = draft.tools.map((t) => t.id === toolToSave.id ? toolToSave : t);
+    try {
+      await api<{ ok: boolean }>("/admin/config", {
+        method: "PUT",
+        body: JSON.stringify({ tools: updatedTools }),
+      });
+      updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
+      setStatus(`Saved changes to "${toolToSave.title}" successfully.`);
+      await refreshConfig();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to save tool changes.");
+    }
   };
 
   const moveTool = (id: string, direction: "up" | "down") => {
@@ -569,9 +780,10 @@ export default function AdminDashboard({ username }: { username: string }) {
               <button
                 onClick={() => setActive(name)}
                 key={name}
+                style={active === name ? { backgroundColor: draft.primaryColor } : undefined}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
                   active === name
-                    ? "bg-hos-red text-white"
+                    ? "text-white"
                     : "text-zinc-400 hover:bg-white/5 hover:text-white"
                 }`}
               >
@@ -622,9 +834,10 @@ export default function AdminDashboard({ username }: { username: string }) {
                   setMobileMenuOpen(false);
                 }}
                 key={name}
+                style={active === name ? { backgroundColor: draft.primaryColor } : undefined}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
                   active === name
-                    ? "bg-hos-red text-white"
+                    ? "text-white"
                     : "text-zinc-400 hover:bg-white/5 hover:text-white"
                 }`}
               >
@@ -683,6 +896,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                   onSave={() => void saveSection("Dashboard")}
                   onReset={resetAll}
                   saveLabel={loadingSummary ? "Refreshing..." : "Save all changes"}
+                  primaryColor={draft.primaryColor}
                 />
               </div>
             </div>
@@ -712,12 +926,55 @@ export default function AdminDashboard({ username }: { username: string }) {
                   value={draft.discordUrl}
                   onChange={(discordUrl) => setDraft((current) => ({ ...current, discordUrl }))}
                 />
-                <p className="text-xs text-zinc-500">Banner values are appended to default homepage messages.</p>
+                <div className="border-t border-white/10 my-1 pt-4" />
+                <h3 className="text-sm font-bold text-white tracking-wide">Recruitment Email Settings</h3>
+                <Field
+                  label="Email Sender Name"
+                  value={draft.recruitmentEmailSenderName || ""}
+                  onChange={(recruitmentEmailSenderName) => setDraft((current) => ({ ...current, recruitmentEmailSenderName }))}
+                  placeholder="e.g. HOS Recruitment"
+                />
+                <Field
+                  label="Recruitment Application Receiver Email"
+                  value={draft.recruitmentEmailReceiver || ""}
+                  onChange={(recruitmentEmailReceiver) => setDraft((current) => ({ ...current, recruitmentEmailReceiver }))}
+                  placeholder="e.g. leadership@domain.com (Leave empty to use env default)"
+                />
+                <label className="text-sm text-zinc-300 block mt-4">
+                  Recruitment Submission Limit (Applications per 30 min)
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={draft.recruitmentEmailLimitPer30Min || 2}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(20, Number(e.target.value) || 1));
+                      setDraft((current) => ({ ...current, recruitmentEmailLimitPer30Min: val }));
+                    }}
+                    className={input}
+                  />
+                </label>
+                <label className="text-sm text-zinc-300 block mt-4">
+                  Chat Message Send Limit (Messages per minute)
+                  <input
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={draft.chatMessagesLimitPerMin || 30}
+                    onChange={(e) => {
+                      const val = Math.max(5, Math.min(120, Number(e.target.value) || 5));
+                      setDraft((current) => ({ ...current, chatMessagesLimitPerMin: val }));
+                    }}
+                    className={input}
+                  />
+                </label>
+                <p className="text-xs text-zinc-500 mt-2">Banner values are appended to default homepage messages.</p>
               </div>
               <SectionActions
                 canSave={hasSectionChanges("Website Settings", config, draft)}
                 onSave={() => void saveSection("Website Settings")}
                 onReset={resetAll}
+                primaryColor={draft.primaryColor}
               />
             </div>
           )}
@@ -754,6 +1011,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                 canSave={hasSectionChanges("Theme", config, draft)}
                 onSave={() => void saveSection("Theme")}
                 onReset={resetAll}
+                primaryColor={draft.primaryColor}
               />
             </div>
           )}
@@ -763,21 +1021,23 @@ export default function AdminDashboard({ username }: { username: string }) {
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setToolsEditMode((current) => !current)}
-                  className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold text-zinc-200 transition hover:bg-white/10"
+                  style={{ borderColor: `${draft.primaryColor}50`, color: draft.primaryColor }}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-bold transition hover:bg-white/10"
                 >
                   {toolsEditMode ? "Stop editing" : "Edit tools"}
                 </button>
                 <button
                   onClick={() => void saveSection("Tools")}
                   disabled={!toolsEditMode || !hasSectionChanges("Tools", config, draft)}
-                  className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ backgroundColor: draft.primaryColor }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Save tools section
                 </button>
                 <button
-                  onClick={addTool}
-                  disabled={!toolsEditMode}
-                  className="rounded-lg bg-hos-red px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110"
+                  onClick={handleOpenToolModal}
+                  style={{ backgroundColor: draft.primaryColor }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110"
                 >
                   Add tool
                 </button>
@@ -808,11 +1068,12 @@ export default function AdminDashboard({ username }: { username: string }) {
                           />
                         </div>
 
-                        <input
+                        <textarea
                           value={tool.description}
                           onChange={(event) => alterTool(tool.id, { description: event.target.value })}
                           disabled={!toolsEditMode}
-                          className="rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
+                          rows={3}
+                          className="w-full rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none resize-y"
                           placeholder="Tool description"
                         />
 
@@ -876,24 +1137,19 @@ export default function AdminDashboard({ username }: { username: string }) {
                               disabled={!toolsEditMode}
                               className="w-14 rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
                             />
-                            <label className="flex items-center gap-1 text-[11px] text-zinc-400">
-                              <input
-                                type="checkbox"
-                                checked={tool.enabled}
-                                onChange={(event) => alterTool(tool.id, { enabled: event.target.checked })}
-                                disabled={!toolsEditMode}
-                              />
-                              On
-                            </label>
-                            <label className="flex items-center gap-1 text-[11px] text-zinc-400">
-                              <input
-                                type="checkbox"
-                                checked={tool.visible}
-                                onChange={(event) => alterTool(tool.id, { visible: event.target.checked })}
-                                disabled={!toolsEditMode}
-                              />
-                              Show
-                            </label>
+                            <button
+                              type="button"
+                              disabled={!toolsEditMode}
+                              onClick={() => alterTool(tool.id, { visible: !tool.visible })}
+                              style={tool.visible ? { backgroundColor: `${draft.primaryColor}20`, borderColor: draft.primaryColor, color: draft.primaryColor } : undefined}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition border ${
+                                tool.visible
+                                  ? "border-neon-blue/40 text-neon-blue bg-neon-blue/10"
+                                  : "border-white/10 bg-black/25 text-zinc-500 hover:border-white/20"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                              {tool.visible ? "Shown" : "Hidden"}
+                            </button>
                           </div>
                         </div>
 
@@ -902,6 +1158,15 @@ export default function AdminDashboard({ username }: { username: string }) {
                             {Icon ? <Icon className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
                           </div>
                           <div className="flex items-center gap-1">
+                            {toolsEditMode && isToolEdited(tool) && (
+                              <button
+                                onClick={() => void saveSingleTool(tool)}
+                                style={{ backgroundColor: draft.primaryColor }}
+                                className="rounded px-2.5 py-1 text-[11px] font-bold text-white transition hover:brightness-110 active:scale-95 animate-pulse"
+                              >
+                                Save
+                              </button>
+                            )}
                             <button
                               onClick={() => moveTool(tool.id, "up")}
                               disabled={!toolsEditMode}
@@ -930,21 +1195,125 @@ export default function AdminDashboard({ username }: { username: string }) {
                   );
                 })}
 
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setToolsEditMode((current) => !current)}
-                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/5"
-                >
-                  {toolsEditMode ? "Stop editing" : "Edit tools"}
-                </button>
-                <button
-                  onClick={() => void saveSection("Tools")}
-                  disabled={!toolsEditMode || !hasSectionChanges("Tools", config, draft)}
-                  className="rounded-lg bg-hos-red px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Save tools section
-                </button>
-              </div>
+              {showToolModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+                  <div className="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                      <h3 className="text-lg font-bold text-white">Create New Tool</h3>
+                      <button
+                        onClick={() => setShowToolModal(false)}
+                        className="rounded-lg border border-white/15 p-1 text-zinc-400 hover:text-white"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <form onSubmit={handleToolSubmit} className="mt-4 space-y-4">
+                      <div>
+                        <Field label="Tool Name" value={toolTitle} onChange={setToolTitle} />
+                      </div>
+                      <div>
+                        <label className="text-sm text-zinc-300">
+                          Description
+                          <textarea
+                            value={toolDescription}
+                            onChange={(e) => setToolDescription(e.target.value)}
+                            rows={2}
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
+                            placeholder="Provide details about the tool..."
+                          />
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Field label="Category" value={toolCategory} onChange={setToolCategory} />
+                        <Field label="Link / URL" value={toolLink} onChange={setToolLink} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <label className="text-sm text-zinc-300">
+                          Display Order
+                          <input
+                            type="number"
+                            min={1}
+                            value={toolOrder}
+                            onChange={(e) => setToolOrder(Number(e.target.value) || 1)}
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
+                          />
+                        </label>
+                        <label className="text-sm text-zinc-300">
+                          Theme Accent Color
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="color"
+                              value={toolColor}
+                              onChange={(e) => setToolColor(e.target.value)}
+                              className="h-9 w-12 rounded border border-white/10 bg-transparent animate-none"
+                            />
+                            <input
+                              value={toolColor}
+                              onChange={(e) => setToolColor(e.target.value)}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-2 py-2 text-xs text-zinc-300 outline-none"
+                            />
+                          </div>
+                        </label>
+                      </div>
+                      <div>
+                        <label className="text-sm text-zinc-300">Choose Icon</label>
+                        <div className="mt-2 grid grid-cols-7 gap-1.5 rounded-lg border border-white/10 bg-black/25 p-2">
+                          {toolIconOptions.map((name) => {
+                            const Picker = FaIcons[name as keyof typeof FaIcons] as
+                              | React.ComponentType<{ className?: string }>
+                              | undefined;
+                            const selected = toolIcon === name;
+                            return (
+                              <button
+                                type="button"
+                                key={name}
+                                onClick={() => setToolIcon(name)}
+                                title={name}
+                                className={`grid h-8 w-8 place-items-center rounded-md border text-xs transition ${
+                                  selected
+                                    ? "border-white/40 bg-white/10 text-white"
+                                    : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
+                                }`}
+                              >
+                                {Picker ? <Picker className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 py-1">
+                        <input
+                          type="checkbox"
+                          id="tool-visible"
+                          checked={toolVisible}
+                          onChange={(e) => setToolVisible(e.target.checked)}
+                          className="h-4 w-4 bg-transparent border-white/10 text-hos-red focus:ring-0 focus:ring-offset-0"
+                        />
+                        <label htmlFor="tool-visible" className="text-xs font-semibold text-zinc-300 select-none">
+                          Show this tool on website homepage
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setShowToolModal(false)}
+                          className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          style={{ backgroundColor: draft.primaryColor }}
+                          className="rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110"
+                        >
+                          Create Tool
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -974,6 +1343,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                 canSave={hasSectionChanges("Gallery", config, draft)}
                 onSave={() => void saveSection("Gallery")}
                 onReset={resetAll}
+                primaryColor={draft.primaryColor}
               />
             </div>
           )}
@@ -985,17 +1355,28 @@ export default function AdminDashboard({ username }: { username: string }) {
                   onClick={() => {
                     if (svsEditMode) {
                       if (hasSectionChanges("SVS History", config, draft)) {
-                        setDraft((current) => ({
-                          ...current,
-                          svsHistory: config.svsHistory,
-                        }));
+                        showConfirm({
+                          title: "Discard SVS History Changes",
+                          message: "Are you sure you want to discard your unsaved SVS History changes?",
+                          confirmLabel: "Discard",
+                          isDestructive: true,
+                          onConfirm: () => {
+                            setDraft((current) => ({
+                              ...current,
+                              svsHistory: config.svsHistory,
+                            }));
+                            setSvsEditMode(false);
+                          },
+                        });
+                      } else {
+                        setSvsEditMode(false);
                       }
-                      setSvsEditMode(false);
                     } else {
                       setSvsEditMode(true);
                     }
                   }}
-                  className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold text-zinc-200 transition hover:bg-white/10"
+                  style={{ borderColor: `${draft.primaryColor}50`, color: draft.primaryColor }}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-bold transition hover:bg-white/10"
                 >
                   {svsEditMode
                     ? hasSectionChanges("SVS History", config, draft)
@@ -1006,7 +1387,8 @@ export default function AdminDashboard({ username }: { username: string }) {
                 <button
                   onClick={() => void saveSection("SVS History")}
                   disabled={!svsEditMode || !hasSectionChanges("SVS History", config, draft)}
-                  className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ backgroundColor: draft.primaryColor }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Save SVS history
                 </button>
@@ -1102,9 +1484,10 @@ export default function AdminDashboard({ username }: { username: string }) {
                     <button
                       key={key}
                       onClick={() => setRange(key)}
+                      style={range === key ? { backgroundColor: draft.primaryColor } : undefined}
                       className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                         range === key
-                          ? "bg-hos-red text-white"
+                          ? "text-white"
                           : "border border-white/20 text-zinc-300 hover:bg-white/10"
                       }`}
                     >
@@ -1142,7 +1525,8 @@ export default function AdminDashboard({ username }: { username: string }) {
                 </div>
                 <button
                   onClick={handleOpenCreateModal}
-                  className="rounded-lg bg-hos-red px-3 py-2 text-xs font-bold text-white transition hover:brightness-110"
+                  style={{ backgroundColor: draft.primaryColor }}
+                  className="rounded-lg px-3 py-2 text-xs font-bold text-white transition hover:brightness-110"
                 >
                   Create new event
                 </button>
@@ -1262,7 +1646,8 @@ export default function AdminDashboard({ username }: { username: string }) {
                         </button>
                         <button
                           type="submit"
-                          className="rounded-lg bg-hos-red px-4 py-2 text-xs font-bold text-white hover:brightness-110"
+                          style={{ backgroundColor: draft.primaryColor }}
+                          className="rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110"
                         >
                           {editingEventId ? "Save Changes" : "Save Event"}
                         </button>
@@ -1280,6 +1665,73 @@ export default function AdminDashboard({ username }: { username: string }) {
               <p className="mt-2 text-sm text-zinc-400">This module is not yet configured with persistent fields.</p>
             </div>
           )}
+          <AnimatePresence>
+            {confirmState.isOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+                  className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="glass-panel relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-5 shadow-2xl"
+                >
+                  <div
+                    className={`absolute top-0 inset-x-0 h-1 bg-gradient-to-r ${
+                      confirmState.isDestructive
+                        ? "from-neon-red to-neon-purple"
+                        : "from-neon-blue to-neon-purple"
+                    }`}
+                  />
+                  <div className="flex gap-3">
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                        confirmState.isDestructive
+                          ? "bg-neon-red/10 text-neon-red"
+                          : "bg-neon-blue/10 text-neon-blue"
+                      }`}
+                    >
+                      {confirmState.isDestructive ? <AlertTriangle size={18} /> : <Info size={18} />}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-base font-bold text-white tracking-wide">
+                        {confirmState.title}
+                      </h3>
+                      <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+                        {confirmState.message}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-5 flex justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs font-bold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                    >
+                      {confirmState.cancelLabel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmState.onConfirm}
+                      className={`rounded-lg px-3.5 py-1.5 text-xs font-bold text-white transition ${
+                        confirmState.isDestructive
+                          ? "bg-neon-red/20 text-neon-red border border-neon-red/40 hover:bg-neon-red hover:text-black"
+                          : "bg-neon-blue/20 text-neon-blue border border-neon-blue/40 hover:bg-neon-blue hover:text-black"
+                      }`}
+                    >
+                      {confirmState.confirmLabel}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </div>
