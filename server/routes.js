@@ -321,6 +321,104 @@ router.get(
   }),
 );
 
+// ── REST Chat Endpoints (Vercel-compatible, replaces Socket.IO) ──
+
+const cleanText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max ? value.trim().replace(/[<>]/g, '') : null;
+
+const chatLimiter = rateLimit({ windowMs: 2000, limit: 1, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Please slow down' } });
+
+router.post(
+  '/chat/register',
+  asyncRoute(async (req, res) => {
+    const gameName = cleanText(req.body.gameName, 40);
+    const serverNumber = cleanText(req.body.serverNumber, 4);
+    const allianceName = cleanText(req.body.allianceName, 3);
+
+    if (!gameName || !serverNumber || !allianceName) {
+      return res.status(400).json({ error: 'Invalid profile' });
+    }
+    if (!/^\d{1,4}$/.test(serverNumber)) {
+      return res.status(400).json({ error: 'Server number must be a number with a maximum of 4 digits' });
+    }
+    if (!/^[a-zA-Z]{3}$/.test(allianceName)) {
+      return res.status(400).json({ error: 'Alliance name must be exactly 3 letters' });
+    }
+
+    const user = await createChatUser({ gameName, serverNumber, allianceName });
+    res.json({ ok: true, user: { id: user._id, gameName, serverNumber, allianceName } });
+  }),
+);
+
+router.post(
+  '/chat/message',
+  chatLimiter,
+  asyncRoute(async (req, res) => {
+    const gameName = cleanText(req.body.gameName, 40);
+    const serverNumber = cleanText(req.body.serverNumber, 4);
+    const allianceName = cleanText(req.body.allianceName, 3);
+    const content = cleanText(req.body.content, 1000);
+
+    if (!gameName || !serverNumber || !allianceName) {
+      return res.status(400).json({ error: 'Profile required' });
+    }
+    if (!content) {
+      return res.status(400).json({ error: 'Invalid message' });
+    }
+
+    // Find or create the chat user
+    const user = await createChatUser({ gameName, serverNumber, allianceName });
+
+    // Per-minute rate limiting from DB settings
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const recentCount = await Message.countDocuments({ userId: user._id, createdAt: { $gte: oneMinuteAgo } });
+    const site = await Settings.findOne({ key: 'site' }).lean();
+    const limit = site?.chatMessagesLimitPerMin !== undefined ? site.chatMessagesLimitPerMin : 30;
+
+    if (recentCount >= limit) {
+      return res.status(429).json({ error: `You have reached the limit of ${limit} messages per minute. Please wait before sending more.` });
+    }
+
+    const message = await Message.create({ userId: user._id, content });
+    await tally('messages');
+
+    res.status(201).json({
+      _id: String(message._id),
+      content,
+      createdAt: message.createdAt,
+      user: { gameName, serverNumber, allianceName },
+    });
+  }),
+);
+
+router.get(
+  '/messages/poll',
+  asyncRoute(async (req, res) => {
+    const after = req.query.after;
+    if (!after) {
+      return res.status(400).json({ error: 'Missing "after" query parameter' });
+    }
+
+    const items = await Message.find({ createdAt: { $gt: new Date(after) } })
+      .populate('userId', 'gameName serverNumber allianceName')
+      .sort({ createdAt: 1 })
+      .limit(100)
+      .lean();
+
+    res.json(
+      items.map((message) => ({
+        _id: String(message._id),
+        content: message.content,
+        createdAt: message.createdAt,
+        user: {
+          gameName: message.userId?.gameName || 'Unknown',
+          serverNumber: message.userId?.serverNumber || '-',
+          allianceName: message.userId?.allianceName || '-',
+        },
+      })),
+    );
+  }),
+);
+
 router.get(
   '/users',
   asyncRoute(async (_req, res) => {

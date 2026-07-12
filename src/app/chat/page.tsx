@@ -1,10 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
-import { Send, Users, Loader2, AlertTriangle } from "lucide-react";
+import { Send, Loader2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { api, socketUrl } from "@/lib/api";
+import { api } from "@/lib/api";
+import { PageLoader } from "@/components/PageLoader";
 
 type Profile = {
   gameName: string;
@@ -20,6 +20,7 @@ type ChatMessage = {
 };
 
 const profileKey = "hos-chat-profile";
+const POLL_INTERVAL = 2500;
 
 const EMOJIS = [
   "😊", "😂", "🤣", "👍", "🔥", "💯", "🎉", "❤️", "😍", "⚔️",
@@ -54,8 +55,8 @@ export default function Page() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [online, setOnline] = useState(0);
-  const [typing, setTyping] = useState("");
+  const [sending, setSending] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Pagination states
   const [loadingMore, setLoadingMore] = useState(false);
@@ -70,11 +71,10 @@ export default function Page() {
   // Validation error state
   const [validationError, setValidationError] = useState("");
 
-  const socket = useRef<Socket | null>(null);
-  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLDivElement>(null);
   const hasLoadedInitial = useRef(false);
+  const lastPollTimestamp = useRef<string | null>(null);
 
   // 1. Update relative time stamps every 15 seconds
   useEffect(() => {
@@ -107,81 +107,78 @@ export default function Page() {
     // Fetch initial 50 messages
     api<ChatMessage[]>("/messages?limit=50&skip=0")
       .then((items) => {
-        setMessages(items.reverse());
+        const reversed = items.reverse();
+        setMessages(reversed);
+        if (reversed.length > 0) {
+          lastPollTimestamp.current = reversed[reversed.length - 1].createdAt;
+        }
         if (items.length < 50) {
           setHasMore(false);
         }
       })
       .catch((err) => {
         console.error("Failed to load initial messages", err);
-      });
+      })
+      .finally(() => setInitialLoading(false));
   }, []);
 
-  // 4. Setup socket listeners
+  // 4. Register profile with server via REST
   useEffect(() => {
-    if (!profile || !socketUrl) return;
+    if (!profile) return;
 
-    const instance = io(socketUrl, { transports: ["websocket"] });
-    socket.current = instance;
-
-    const emitProfile = () => {
-      instance.emit("profile", profile, (res: { ok: boolean; error?: string }) => {
-        if (res && !res.ok) {
-          localStorage.removeItem(profileKey);
-          setProfile(null);
-          if (res.error) {
-            setValidationError(res.error);
-          }
-        }
-      });
-    };
-
-    if (instance.connected) {
-      emitProfile();
-    }
-    instance.on("connect", emitProfile);
-
-    instance.on("online-users", setOnline);
-
-    instance.on("typing", (event: { name: string; typing: boolean }) => {
-      setTyping(event.typing ? `${event.name} is typing…` : "");
+    api("/chat/register", {
+      method: "POST",
+      body: JSON.stringify(profile),
+    }).catch((err) => {
+      if (err.message && err.message !== "Request failed") {
+        localStorage.removeItem(profileKey);
+        setProfile(null);
+        setValidationError(err.message);
+      }
     });
-
-    return () => {
-      instance.disconnect();
-    };
   }, [profile]);
 
-  // 5. Handle incoming socket messages and scroll correctly
+  // 5. Poll for new messages every POLL_INTERVAL ms
   useEffect(() => {
-    if (!socket.current) return;
+    if (!profile) return;
 
-    const handleNewMessage = (message: ChatMessage) => {
-      setMessages((current) => {
-        const nextList = [...current, message];
-        if (nextList.length > 500) {
-          return nextList.slice(-500);
-        }
-        return nextList;
-      });
+    const pollMessages = async () => {
+      const after = lastPollTimestamp.current;
+      if (!after) return;
 
-      // Scroll to bottom if user is close to bottom
-      setTimeout(() => {
-        const container = containerRef.current;
-        if (container) {
-          const isNearBottom =
-            container.scrollHeight - container.clientHeight - container.scrollTop < 250;
-          if (isNearBottom) {
-            container.scrollTop = container.scrollHeight;
-          }
+      try {
+        const newMessages = await api<ChatMessage[]>(`/messages/poll?after=${encodeURIComponent(after)}`);
+        if (newMessages.length > 0) {
+          setMessages((current) => {
+            const existingIds = new Set(current.map((m) => m._id));
+            const unique = newMessages.filter((m) => !existingIds.has(m._id));
+            if (unique.length === 0) return current;
+
+            const nextList = [...current, ...unique];
+            // Update the poll timestamp to the latest message
+            lastPollTimestamp.current = unique[unique.length - 1].createdAt;
+            return nextList.length > 500 ? nextList.slice(-500) : nextList;
+          });
+
+          // Auto-scroll if near bottom
+          setTimeout(() => {
+            const container = containerRef.current;
+            if (container) {
+              const isNearBottom =
+                container.scrollHeight - container.clientHeight - container.scrollTop < 250;
+              if (isNearBottom) {
+                container.scrollTop = container.scrollHeight;
+              }
+            }
+          }, 50);
         }
-      }, 50);
+      } catch {
+        // Silently retry on next poll
+      }
     };
 
-    socket.current.on("message", handleNewMessage);
-    return () => {
-      socket.current?.off("message", handleNewMessage);
-    };
+    const interval = setInterval(pollMessages, POLL_INTERVAL);
+    return () => clearInterval(interval);
   }, [profile]);
 
   // 6. Scroll to bottom on initial loaded batch
@@ -270,20 +267,54 @@ export default function Page() {
     setProfile(next);
   };
 
-  const send = (event: FormEvent) => {
+  const send = async (event: FormEvent) => {
     event.preventDefault();
-    if (!draft.trim()) return;
-    socket.current?.emit("message", draft.trim(), (result: { ok: boolean; error?: string }) => {
-      if (!result.ok) {
-        if (result.error === "Profile required" || result.error === "Invalid profile") {
-          localStorage.removeItem(profileKey);
-          setProfile(null);
-        }
-        setValidationError(result.error || "Message could not be sent.");
-      }
-    });
+    const text = draft.trim();
+    if (!text || !profile || sending) return;
+
+    setSending(true);
     setDraft("");
+
+    try {
+      const message = await api<ChatMessage>("/chat/message", {
+        method: "POST",
+        body: JSON.stringify({ ...profile, content: text }),
+      });
+
+      // Optimistically add the message to the list
+      setMessages((current) => {
+        const nextList = [...current, message];
+        lastPollTimestamp.current = message.createdAt;
+        return nextList.length > 500 ? nextList.slice(-500) : nextList;
+      });
+
+      // Scroll to bottom
+      setTimeout(() => {
+        const container = containerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      }, 50);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Message could not be sent.";
+      if (errorMsg === "Profile required" || errorMsg === "Invalid profile") {
+        localStorage.removeItem(profileKey);
+        setProfile(null);
+      }
+      setValidationError(errorMsg);
+      setDraft(text); // Restore draft on failure
+    } finally {
+      setSending(false);
+    }
   };
+
+  if (initialLoading) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-4xl p-4 pt-20 sm:p-8 sm:pt-24">
+        <PageLoader label="Connecting to Alliance Chat..." />
+      </main>
+    );
+  }
 
   if (!profile) {
     return (
@@ -365,9 +396,9 @@ export default function Page() {
           <h1 className="font-bold tracking-widest text-white">HOS CHAT</h1>
           <p className="text-xs text-zinc-400">Server 1895 communications</p>
         </div>
-        <span className="flex items-center gap-2 text-sm text-neon-green">
-          <Users size={15} />
-          {online} online
+        <span className="flex items-center gap-2 text-xs text-zinc-500">
+          <span className="inline-block h-2 w-2 rounded-full bg-neon-green animate-pulse" />
+          Live
         </span>
       </header>
 
@@ -398,8 +429,6 @@ export default function Page() {
           ))}
         </div>
 
-        <p className="h-5 px-5 text-xs text-zinc-500">{typing}</p>
-        
         <form onSubmit={send} className="flex gap-2 border-t border-white/10 p-3 relative">
           <div ref={emojiButtonRef} className="relative flex items-center">
             <button
@@ -431,18 +460,16 @@ export default function Page() {
           </div>
           <input
             value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              socket.current?.emit("typing", true);
-              if (typingTimer.current) clearTimeout(typingTimer.current);
-              typingTimer.current = setTimeout(() => socket.current?.emit("typing", false), 800);
-            }}
+            onChange={(e) => setDraft(e.target.value)}
             maxLength={1000}
             placeholder="Message the alliance…"
             className="min-w-0 flex-1 rounded-lg bg-black/30 px-3 py-2 outline-none focus:ring-1 focus:ring-neon-blue"
           />
-          <button className="rounded-lg bg-neon-blue/20 p-2 text-neon-blue ring-1 ring-neon-blue/50">
-            <Send size={18} />
+          <button
+            disabled={sending}
+            className="rounded-lg bg-neon-blue/20 p-2 text-neon-blue ring-1 ring-neon-blue/50 disabled:opacity-50"
+          >
+            {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </form>
       </section>
