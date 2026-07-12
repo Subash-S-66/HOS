@@ -7,7 +7,7 @@ export default function SiteFooter() {
   const pathname = usePathname();
   const { config } = useSiteConfig();
 
-  if (pathname.startsWith("/admin")) return null;
+  if (pathname !== "/") return null;
 
   return (
     <footer className="relative z-10 px-4 pb-6 pt-2 sm:px-8">
