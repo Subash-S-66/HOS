@@ -477,6 +477,9 @@ export default function AdminDashboard({ username }: { username: string }) {
 
       setStatus(`Saved ${section} changes to database.`);
       await refreshConfig();
+      if (section === "SVS History") {
+        setSvsEditMode(false);
+      }
       if (section === "Dashboard" || section === "Analytics") {
         void loadSummary(range);
       }
@@ -979,10 +982,26 @@ export default function AdminDashboard({ username }: { username: string }) {
             <div className="glass-panel space-y-2 rounded-xl p-4">
               <div className="mb-2 flex justify-end gap-2">
                 <button
-                  onClick={() => setSvsEditMode((current) => !current)}
+                  onClick={() => {
+                    if (svsEditMode) {
+                      if (hasSectionChanges("SVS History", config, draft)) {
+                        setDraft((current) => ({
+                          ...current,
+                          svsHistory: config.svsHistory,
+                        }));
+                      }
+                      setSvsEditMode(false);
+                    } else {
+                      setSvsEditMode(true);
+                    }
+                  }}
                   className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold text-zinc-200 transition hover:bg-white/10"
                 >
-                  {svsEditMode ? "Stop editing" : "Edit SVS history"}
+                  {svsEditMode
+                    ? hasSectionChanges("SVS History", config, draft)
+                      ? "Discard"
+                      : "Stop editing"
+                    : "Edit SVS history"}
                 </button>
                 <button
                   onClick={() => void saveSection("SVS History")}

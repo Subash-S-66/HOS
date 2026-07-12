@@ -33,12 +33,110 @@ async function ensureSvsDates() { const entries = await SVSHistory.find({ date: 
 async function advanceSvsHistory() { const entries = await SVSHistory.find().sort({ position: 1 }); await Promise.all(entries.map((entry) => { const date = new Date(entry.date || svsDateFromWeek(entry.week)); date.setUTCDate(date.getUTCDate() + 14); const week = isoWeek(date); return SVSHistory.updateOne({ _id: entry._id }, { $set: { date, week, url: `https://svs.info/server/1895/svs/${week}` } }); })); }
 async function advanceSvsIfDue() { const totalDue = scheduledSvsUpdates(); if (!totalDue) return; const state = await Settings.findOne({ key: 'svs-schedule' }).lean(); const completed = state?.lastSvsAutoAdvance ? scheduledSvsUpdates(new Date(`${state.lastSvsAutoAdvance}T12:00:00Z`)) : 0; for (let update = completed; update < totalDue; update += 1) await advanceSvsHistory(); const lastDueDate = new Date(SVS_UPDATE_ANCHOR + (totalDue - 1) * 14 * DAY).toISOString().slice(0, 10); await Settings.updateOne({ key: 'svs-schedule' }, { $set: { lastSvsAutoAdvance: lastDueDate }, $setOnInsert: { key: 'svs-schedule' } }, { upsert: true }); }
 async function seedSvs() { if (await SVSHistory.countDocuments()) return; await SVSHistory.insertMany(Array.from({length:10},(_,index)=>{const date = new Date(SVS_BASE_DATE); date.setUTCDate(date.getUTCDate() - index * 14); const week = isoWeek(date); return {position:index+1,date,week,url:`https://svs.info/server/1895/svs/${week}`};})); }
-async function start() {
-  assertConfig(); await mongoose.connect(mongoUri, { autoIndex: true }); await User.updateMany({ socketId: { $ne: null } }, { $set: { socketId: null } }); await seedSvs(); await ensureSvsDates(); await advanceSvsIfDue();
-  const app = express(); app.set('trust proxy', 1); app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })); app.use(compression()); app.use(cors({ origin: clientOrigin.split(',').map((value)=>value.trim()), methods:['GET','POST','PATCH','PUT','DELETE'], allowedHeaders:['Content-Type','Authorization'], credentials: true })); app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev')); app.use(express.json({limit:'100kb'})); app.use(rejectMongoOperators); app.use(rateLimit({ windowMs: 15*60*1000, limit: 300, standardHeaders:'draft-8', legacyHeaders:false })); app.get('/health',(_req,res)=>res.json({ok:true})); app.use('/api',router); app.use(errorHandler);
-  const server=http.createServer(app); const io=new Server(server,{cors:{origin:clientOrigin.split(',').map((value)=>value.trim()),methods:['GET','POST']},transports:['websocket','polling']}); const online=new Map();
-  io.on('connection',(socket)=>{ let user; let lastMessageAt=0; socket.on('profile',async(profile,reply)=>{try{const gameName=cleanText(profile?.gameName,40),serverNumber=cleanText(profile?.serverNumber,12),allianceName=cleanText(profile?.allianceName,40);if(!gameName||!serverNumber||!allianceName)throw new Error('Invalid profile');user=await createChatUser({gameName,serverNumber,allianceName,socketId:socket.id});online.set(socket.id,user);io.emit('online-users',online.size);reply?.({ok:true,user:{id:user.id,gameName,serverNumber,allianceName}});}catch{reply?.({ok:false,error:'Invalid profile'});}}); socket.on('typing',(typing)=>{if(user)socket.broadcast.emit('typing',{name:user.gameName,typing:Boolean(typing)});});socket.on('message',async(content,reply)=>{try{if(Date.now()-lastMessageAt<750)throw new Error('Please slow down');if(!user)throw new Error('Profile required');const value=cleanText(content,1000);if(!value)throw new Error('Invalid message');lastMessageAt=Date.now();const message=await Message.create({userId:user._id,content:value});await tally('messages');const payload={_id:message.id,content:value,createdAt:message.createdAt,user:{gameName:user.gameName,serverNumber:user.serverNumber,allianceName:user.allianceName}};io.emit('message',payload);reply?.({ok:true});}catch(error){reply?.({ok:false,error:error.message||'Unable to send message'});}});socket.on('disconnect',async()=>{const connectedUser=online.get(socket.id);online.delete(socket.id);if(connectedUser?._id){await setUserOffline(connectedUser._id,socket.id);}io.emit('online-users',online.size);}); });
-  cron.schedule('0 0 * * 1', advanceSvsIfDue, { timezone: 'America/New_York' });
-  server.listen(port,()=>console.log(`HOS API listening on ${port}`));
+let isConnected = false;
+async function connectDb() {
+  if (isConnected || mongoose.connection.readyState >= 1) {
+    isConnected = true;
+    return;
+  }
+  assertConfig();
+  await mongoose.connect(mongoUri, { autoIndex: true });
+  await User.updateMany({ socketId: { $ne: null } }, { $set: { socketId: null } });
+  await seedSvs();
+  await ensureSvsDates();
+  await advanceSvsIfDue();
+  isConnected = true;
 }
-start().catch((error)=>{console.error(error);process.exit(1);});
+
+const app = express();
+app.set('trust proxy', 1);
+
+// Middleware to ensure DB connection
+app.use(async (req, res, next) => {
+  try {
+    await connectDb();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(compression());
+app.use(cors({ origin: clientOrigin.split(',').map((value)=>value.trim()), methods:['GET','POST','PATCH','PUT','DELETE'], allowedHeaders:['Content-Type','Authorization'], credentials: true }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(express.json({limit:'100kb'}));
+app.use(rejectMongoOperators);
+app.use(rateLimit({ windowMs: 15*60*1000, limit: 300, standardHeaders:'draft-8', legacyHeaders:false }));
+app.get('/health',(_req,res)=>res.json({ok:true}));
+app.use('/api',router);
+app.use(errorHandler);
+
+module.exports = app;
+
+if (require.main === module) {
+  const server = http.createServer(app);
+  const io = new Server(server, {
+    cors: {
+      origin: clientOrigin.split(',').map((value)=>value.trim()),
+      methods: ['GET', 'POST']
+    },
+    transports: ['websocket', 'polling']
+  });
+  const online = new Map();
+
+  io.on('connection', (socket) => {
+    let user;
+    let lastMessageAt = 0;
+    socket.on('profile', async (profile, reply) => {
+      try {
+        const gameName = cleanText(profile?.gameName, 40),
+              serverNumber = cleanText(profile?.serverNumber, 12),
+              allianceName = cleanText(profile?.allianceName, 40);
+        if (!gameName || !serverNumber || !allianceName) throw new Error('Invalid profile');
+        user = await createChatUser({ gameName, serverNumber, allianceName, socketId: socket.id });
+        online.set(socket.id, user);
+        io.emit('online-users', online.size);
+        reply?.({ ok: true, user: { id: user.id, gameName, serverNumber, allianceName } });
+      } catch {
+        reply?.({ ok: false, error: 'Invalid profile' });
+      }
+    });
+    socket.on('typing', (typing) => {
+      if (user) socket.broadcast.emit('typing', { name: user.gameName, typing: Boolean(typing) });
+    });
+    socket.on('message', async (content, reply) => {
+      try {
+        if (Date.now() - lastMessageAt < 750) throw new Error('Please slow down');
+        if (!user) throw new Error('Profile required');
+        const value = cleanText(content, 1000);
+        if (!value) throw new Error('Invalid message');
+        lastMessageAt = Date.now();
+        const message = await Message.create({ userId: user._id, content: value });
+        await tally('messages');
+        const payload = {
+          _id: message.id,
+          content: value,
+          createdAt: message.createdAt,
+          user: { gameName: user.gameName, serverNumber: user.serverNumber, allianceName: user.allianceName }
+        };
+        io.emit('message', payload);
+        reply?.({ ok: true });
+      } catch (error) {
+        reply?.({ ok: false, error: error.message || 'Unable to send message' });
+      }
+    });
+    socket.on('disconnect', async () => {
+      const connectedUser = online.get(socket.id);
+      online.delete(socket.id);
+      if (connectedUser?._id) {
+        await setUserOffline(connectedUser._id, socket.id);
+      }
+      io.emit('online-users', online.size);
+    });
+  });
+
+  cron.schedule('0 0 * * 1', advanceSvsIfDue, { timezone: 'America/New_York' });
+  server.listen(port, () => console.log(`HOS API listening on ${port}`));
+}
+

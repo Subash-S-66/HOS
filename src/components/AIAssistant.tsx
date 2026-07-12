@@ -16,9 +16,23 @@ type AssistantRow = {
   content: string;
 };
 
+const QA_DATABASE = {
+  "About HOS": "House of Spanking (HOS) is a premier, dominating alliance on Server 1895. Built for absolute victory, HOS oversees server-wide operations, guides command strategies, and coordinates defensive and offensive operations during critical events like Server-vs-Server (SvS) battles.",
+  "Home Page": "The Landing Page (/) serves as the main command terminal for the alliance. It introduces HOS, spotlights featured recruits and activities, displays current server milestones, and links out to all tactical alliance databases.",
+  "Chat Room": "The Chat Page (/chat) is a real-time communications terminal. Utilizing WebSockets, it allows all registered commanders to chat securely and instantaneously about tactics, alerts, and coordinates.",
+  "Events": "The Events Page (/events) lists scheduled alliance matches, campaigns, and rallies. It features dynamic countdown timers synced to UTC, helping players coordinate times accurately across global timezones.",
+  "Gallery": "The Gallery Page (/gallery) is our historical visual archive. Commanders upload and share screenshots of epic battles, war reports, base architectures, and memorable community moments.",
+  "Join Us": "The Join Page (/join) hosts our recruitment portal. Prospective members submit details about their power metrics and servers, which are saved in the system database for recruiter review.",
+  "Leaderboard": "The Leaderboard Page (/leaderboard) ranks alliance members based on performance metrics, power levels, contributions, and historical battle rankings to foster competitive growth.",
+  "Members": "The Members Page (/members) lists the active alliance roster. It shows commander IDs, server numbers, ranks, and tracks their 'last seen online' status to manage activity levels.",
+  "SVS History": "The SVS History Page (/svs-history) archives Server vs. Server campaigns. It records scores, outcomes, and provides historical battle log links for Server 1895.",
+  "Tools": "The Tools Page (/tools) is a utility hub. It features specialized calculators and tools designed to optimize resource usage, troop training ratios, and battle power scaling.",
+  "War Planner": "The War Page (/war) represents our tactical battle map. Roster leaders post target coordinates, squad paths, and strategic plans to outline clear operations instructions."
+};
+
 const initialMessage: ChatItem = {
   role: "ai",
-  content: "Greetings, Commander. I am HOS AI. How can I assist you with alliance operations today?",
+  content: "Greetings, Commander. I am HOS AI. Underneath are some quick links to learn about our alliance pages. How can I assist you with alliance operations today?",
 };
 
 const sessionKey = "hos-ai-session-id";
@@ -61,8 +75,18 @@ export default function AIAssistant() {
     }).catch(() => {});
   };
 
-  const buildReply = (content: string) =>
-    `I have received your query regarding "${content}". The databanks are currently being updated, but HOS continues to dominate Server 1895.`;
+  const askQuestion = (question: keyof typeof QA_DATABASE) => {
+    const userEntry: ChatItem = { role: "user", content: question };
+    setChatHistory((current) => [...current, userEntry]);
+    persist(userEntry);
+
+    window.setTimeout(() => {
+      const answer = QA_DATABASE[question];
+      const aiEntry: ChatItem = { role: "ai", content: answer };
+      setChatHistory((current) => [...current, aiEntry]);
+      persist(aiEntry);
+    }, 600);
+  };
 
   const handleSend = (event: React.FormEvent) => {
     event.preventDefault();
@@ -75,7 +99,14 @@ export default function AIAssistant() {
     setMessage("");
 
     window.setTimeout(() => {
-      const aiEntry: ChatItem = { role: "ai", content: buildReply(text) };
+      const matchedKey = Object.keys(QA_DATABASE).find(
+        (key) => key.toLowerCase() === text.toLowerCase() || text.toLowerCase().includes(key.toLowerCase())
+      );
+      const reply = matchedKey
+        ? QA_DATABASE[matchedKey as keyof typeof QA_DATABASE]
+        : `I have received your query regarding "${text}". The databanks are currently being updated, but HOS continues to dominate Server 1895.`;
+
+      const aiEntry: ChatItem = { role: "ai", content: reply };
       setChatHistory((current) => [...current, aiEntry]);
       persist(aiEntry);
     }, 700);
@@ -130,6 +161,23 @@ export default function AIAssistant() {
                     {msg.content}
                   </div>
                 </div>
+              ))}
+            </div>
+
+            {/* Quick action default questions */}
+            <div 
+              className="flex gap-1.5 overflow-x-auto px-4 py-2 border-t border-neon-purple/10 bg-black/20"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            >
+              {Object.keys(QA_DATABASE).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => askQuestion(key as keyof typeof QA_DATABASE)}
+                  className="flex-shrink-0 rounded-full border border-neon-purple/30 bg-neon-purple/5 px-3 py-1 text-[11px] font-semibold text-neon-purple transition hover:bg-neon-purple/20 hover:text-white"
+                >
+                  {key}
+                </button>
               ))}
             </div>
 
