@@ -1,8 +1,2 @@
-export default function Page() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-screen text-center">
-      <h1 className="text-4xl font-bold text-neon-blue text-glow mb-4 uppercase">leaderboard</h1>
-      <p className="text-gray-400">Section under construction by HOS Engineering.</p>
-    </div>
-  );
-}
+import { Trophy } from "lucide-react";
+export default function Page() { return <main className="mx-auto min-h-screen w-full max-w-3xl p-6 pt-24"><div className="text-center"><Trophy className="mx-auto text-neon-blue"/><h1 className="mt-3 text-3xl font-bold text-white">Alliance Leaderboard</h1><p className="mt-2 text-sm text-zinc-400">Rankings will reflect verified alliance activity.</p></div><div className="glass-panel mt-8 rounded-2xl p-6 text-center text-sm text-zinc-400">Leaderboard data is available as soon as HOS leadership publishes it from the admin analytics service.</div></main>; }

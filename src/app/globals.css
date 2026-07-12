@@ -7,6 +7,7 @@
   --color-neon-purple: #bc13fe;
   --color-neon-green: #39ff14;
   --color-neon-red: #ff003c;
+  --color-hos-red: #00f3ff;
   --color-panel-bg: rgba(10, 10, 20, 0.7);
   --color-panel-border: rgba(0, 243, 255, 0.3);
 
@@ -17,15 +18,19 @@
 :root {
   --background: #000000;
   --foreground: #e0e0e0;
+  --theme-primary: #00f3ff;
+  --theme-rgb: 0 243 255;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(900px circle at 12% 10%, rgb(var(--theme-rgb) / 0.18), transparent 60%),
+    radial-gradient(1100px circle at 88% 0%, rgb(var(--theme-rgb) / 0.12), transparent 58%),
+    linear-gradient(180deg, #080808 0%, #040404 45%, #020202 100%);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   overflow-x: hidden;
-  /* Cinematic dark feel */
-  background-color: #050505;
+  min-height: 100vh;
 }
 
 /* Custom glowing scrollbar */
@@ -36,21 +41,25 @@ body {
   background: rgba(0, 0, 0, 0.8);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 243, 255, 0.5);
+  background: rgb(var(--theme-rgb) / 0.55);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 243, 255, 1);
-  box-shadow: 0 0 10px rgba(0, 243, 255, 0.8);
+  background: rgb(var(--theme-rgb) / 0.95);
+  box-shadow: 0 0 10px rgb(var(--theme-rgb) / 0.75);
 }
 
 /* Base Utility Classes for Cinematic Effects */
 .glass-panel {
-  background: var(--color-panel-bg);
+  background:
+    linear-gradient(145deg, rgb(var(--theme-rgb) / 0.12), transparent 45%),
+    var(--color-panel-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--color-panel-border);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgb(var(--theme-rgb) / 0.28);
+  box-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgb(var(--theme-rgb) / 0.12);
 }
 
 .text-glow {

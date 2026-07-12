@@ -4,15 +4,25 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Loading() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
+    const beginLoading = () => {
+      setProgress(0);
+      setLoading(true);
+    };
+    window.addEventListener("hos:login", beginLoading);
+    return () => window.removeEventListener("hos:login", beginLoading);
+  }, []);
+
+  useEffect(() => {
+    if (!loading) return;
     const timer = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 100) {
+        if (prev >= 90) {
           clearInterval(timer);
-          setTimeout(() => setLoading(false), 500); // Wait a bit at 100%
+          setTimeout(() => setLoading(false), 250);
           return 100;
         }
         return prev + Math.floor(Math.random() * 15) + 5;
@@ -20,7 +30,7 @@ export default function Loading() {
     }, 200);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [loading]);
 
   return (
     <AnimatePresence>
@@ -28,7 +38,7 @@ export default function Loading() {
         <motion.div
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }}
-          transition={{ duration: 1, ease: "easeInOut" }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black"
         >
           {/* Logo & Energy Lines */}

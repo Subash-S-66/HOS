@@ -1,8 +1,5 @@
-export default function Page() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-screen text-center">
-      <h1 className="text-4xl font-bold text-neon-blue text-glow mb-4 uppercase">join</h1>
-      <p className="text-gray-400">Section under construction by HOS Engineering.</p>
-    </div>
-  );
-}
+"use client";
+import { FormEvent, useState } from "react";
+import { api } from "@/lib/api";
+const fields=[['Player Name','playerName'],['Game Name','gameName'],['Server','server'],['Alliance','alliance'],['Power','power'],['Discord','discord'],['Email','email']];
+export default function Page(){const [state,setState]=useState('');const submit=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();setState('');const form=new FormData(e.currentTarget);try{await api('/applications',{method:'POST',body:JSON.stringify(Object.fromEntries(form))});e.currentTarget.reset();setState('Application received. HOS leadership will review it shortly.');}catch(error){setState(error instanceof Error?error.message:'Unable to submit application.');}};return <main className="mx-auto grid min-h-screen w-full max-w-3xl place-items-center p-4 pt-20 sm:p-8"><form onSubmit={submit} className="glass-panel w-full rounded-2xl p-6 sm:p-8"><p className="text-xs font-bold tracking-[.25em] text-neon-blue">RECRUITMENT</p><h1 className="mt-2 text-3xl font-bold text-white">Join House Of Spanking</h1><p className="mt-2 text-sm text-zinc-400">Tell our leadership a little about your Evony account.</p><div className="mt-6 grid gap-4 sm:grid-cols-2">{fields.map(([label,name])=><label key={name} className="text-sm text-zinc-300">{label}<input name={name} type={name==='email'?'email':'text'} required={!['discord'].includes(name)} className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 outline-none focus:border-neon-blue"/></label>)}</div><label className="mt-4 block text-sm text-zinc-300">Message<textarea name="message" maxLength={2000} className="mt-1 min-h-28 w-full rounded-lg border border-white/10 bg-black/30 p-3 outline-none focus:border-neon-blue"/></label><button className="mt-6 rounded-lg bg-neon-blue/20 px-5 py-3 font-bold text-neon-blue ring-1 ring-neon-blue/50 hover:bg-neon-blue hover:text-black">Submit application</button>{state&&<p className="mt-4 text-sm text-zinc-300">{state}</p>}</form></main>}

@@ -1,8 +1,3 @@
-export default function Page() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-screen text-center">
-      <h1 className="text-4xl font-bold text-neon-blue text-glow mb-4 uppercase">war</h1>
-      <p className="text-gray-400">Section under construction by HOS Engineering.</p>
-    </div>
-  );
-}
+import Link from "next/link";
+import { Swords } from "lucide-react";
+export default function Page() { return <main className="grid min-h-screen place-items-center p-6 text-center"><section className="glass-panel max-w-lg rounded-2xl p-8"><Swords className="mx-auto text-neon-red"/><h1 className="mt-4 text-3xl font-bold text-white">War Command</h1><p className="mt-3 text-sm leading-6 text-zinc-400">Review HOS Server vs Server results, battle reports, and historical campaign links from the alliance archive.</p><Link href="/svs-history" className="mt-6 inline-block rounded-lg bg-neon-blue/20 px-5 py-3 text-sm font-bold text-neon-blue ring-1 ring-neon-blue/50">Open SVS History</Link></section></main>; }

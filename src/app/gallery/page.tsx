@@ -1,8 +1,7 @@
-export default function Page() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-screen text-center">
-      <h1 className="text-4xl font-bold text-neon-blue text-glow mb-4 uppercase">gallery</h1>
-      <p className="text-gray-400">Section under construction by HOS Engineering.</p>
-    </div>
-  );
-}
+"use client";
+import Image from "next/image";
+import { ChangeEvent, useEffect, useState } from "react";
+import { X } from "lucide-react";
+import { api, apiUrl } from "@/lib/api";
+type Item={_id:string;imageUrl:string;uploader:string;description:string;likes:number};
+export default function Page(){const [items,setItems]=useState<Item[]>([]),[selected,setSelected]=useState<Item|null>(null),[message,setMessage]=useState('');useEffect(()=>{api<Item[]>('/gallery').then(setItems).catch(()=>{})},[]);const upload=async(e:ChangeEvent<HTMLInputElement>)=>{const image=e.target.files?.[0];if(!image||!apiUrl)return;const uploader=localStorage.getItem('hos-chat-profile');const form=new FormData();form.append('image',image);form.append('uploader',uploader?JSON.parse(uploader).gameName:'HOS visitor');try{const response=await fetch(`${apiUrl}/gallery`,{method:'POST',body:form});if(!response.ok)throw new Error((await response.json()).error);const item=await response.json();setItems(old=>[item,...old]);setMessage('Upload complete.');}catch(error){setMessage(error instanceof Error?error.message:'Upload failed.');}};return <main className="mx-auto min-h-screen w-full max-w-6xl p-4 pt-20 sm:p-8 sm:pt-24"><header className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold tracking-[.25em] text-neon-blue">MEMORIES</p><h1 className="mt-2 text-3xl font-bold text-white">HOS Gallery</h1></div><label className="cursor-pointer rounded-lg bg-neon-blue/20 px-4 py-2 text-sm font-bold text-neon-blue ring-1 ring-neon-blue/50">Upload image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" className="hidden" onChange={upload}/></label></header>{message&&<p className="mb-4 text-sm text-zinc-300">{message}</p>}<section className="columns-2 gap-3 md:columns-3">{items.map(item=><button key={item._id} onClick={()=>setSelected(item)} className="mb-3 block w-full overflow-hidden rounded-xl border border-white/10 text-left"><Image src={item.imageUrl} alt={item.description||`Upload by ${item.uploader}`} width={900} height={700} sizes="(max-width: 768px) 50vw, 33vw" className="h-auto w-full transition hover:scale-105"/></button>)}</section>{selected&&<div role="dialog" className="fixed inset-0 z-50 grid place-items-center bg-black/85 p-4" onClick={()=>setSelected(null)}><button className="absolute right-5 top-5 text-white"><X/></button><div className="max-h-full max-w-4xl" onClick={e=>e.stopPropagation()}><Image src={selected.imageUrl} alt={selected.description||'Gallery image'} width={1600} height={1200} className="max-h-[80vh] w-auto rounded-xl object-contain"/><p className="mt-3 text-sm text-white">{selected.description}</p><p className="text-xs text-zinc-400">Uploaded by {selected.uploader}</p></div></div>}</main>}
