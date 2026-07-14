@@ -37,6 +37,73 @@ const day = () => new Date().toISOString().slice(0, 10);
 const tally = async (key, increment = 1) =>
   Analytics.updateOne({ day: day() }, { $inc: { [key]: increment } }, { upsert: true });
 
+const participationOpensAt = (event) => {
+  if (!event.votingEnabled) return new Date(event.startsAt);
+  const daysBefore = event.votingStartsBeforeDays === undefined || event.votingStartsBeforeDays === null ? -1 : event.votingStartsBeforeDays;
+  if (daysBefore === -1) {
+    return event.createdAt ? new Date(event.createdAt) : new Date(0);
+  }
+  return new Date(new Date(event.startsAt).getTime() - daysBefore * 24 * 60 * 60_000);
+};
+const participationClosesAt = (event) => {
+  const endsBeforeMinutes = event.votingEndsBeforeMinutes || 0;
+  return new Date(new Date(event.startsAt).getTime() - endsBeforeMinutes * 60_000);
+};
+const publicEvent = (event) => {
+  const doc = event.toObject ? event.toObject() : event;
+  return {
+    ...doc,
+    date: doc.startsAt,
+    participationOpensAt: participationOpensAt(doc),
+    participationClosesAt: participationClosesAt(doc),
+    participants: (doc.participants || []).map(({ gameName }) => ({ gameName })),
+  };
+};
+
+// A single atomic claim prevents two requests from creating duplicate repeat events.
+const createDueRecurringEvents = async (now = new Date()) => {
+  const due = await Event.find({ recurrenceDays: { $ne: null, $gt: 0 }, endsAt: { $lt: now }, nextOccurrenceCreated: { $ne: true } }).lean();
+  for (const candidate of due) {
+    const delay = candidate.createDelayDays || 0;
+    const allowedTime = new Date(candidate.endsAt).getTime() + delay * 24 * 60 * 60_000;
+    if (allowedTime > now.getTime()) {
+      continue;
+    }
+    const claimed = await Event.findOneAndUpdate(
+      { _id: candidate._id, nextOccurrenceCreated: { $ne: true } },
+      { $set: { nextOccurrenceCreated: true } },
+      { returnDocument: 'after' },
+    ).lean();
+    if (!claimed) continue;
+    const duration = Math.max(60_000, new Date(claimed.endsAt).getTime() - new Date(claimed.startsAt).getTime());
+    const interval = claimed.recurrenceDays * 24 * 60 * 60_000;
+    const nextStart = new Date(claimed.startsAt);
+    do nextStart.setTime(nextStart.getTime() + interval); while (nextStart <= now);
+    try {
+      await Event.create({
+        title: claimed.title,
+        description: claimed.description,
+        startsAt: nextStart,
+        endsAt: new Date(nextStart.getTime() + duration),
+        timezone: claimed.timezone,
+        hidden: claimed.hidden,
+        votingEnabled: claimed.votingEnabled,
+        votingStartsBeforeDays: (claimed.votingStartsBeforeDays === undefined || claimed.votingStartsBeforeDays === null) ? -1 : claimed.votingStartsBeforeDays,
+        votingEndsBeforeMinutes: claimed.votingEndsBeforeMinutes || 0,
+        createDelayDays: claimed.createDelayDays || 0,
+        maxParticipants: claimed.maxParticipants === undefined ? null : claimed.maxParticipants,
+        color: claimed.color || '#00f3ff',
+        recurrenceDays: claimed.recurrenceDays,
+        participants: [],
+      });
+      await Event.findByIdAndDelete(claimed._id);
+    } catch (error) {
+      await Event.findByIdAndUpdate(claimed._id, { $set: { nextOccurrenceCreated: false } });
+      throw error;
+    }
+  }
+};
+
 const rangeStart = (range = 'today') => {
   const now = new Date();
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -503,8 +570,16 @@ router.delete(
 router.get(
   '/events',
   asyncRoute(async (_req, res) => {
-    const events = await Event.find({ hidden: false, startsAt: { $gte: new Date() } }).sort({ startsAt: 1 }).lean();
-    res.json(events.map((event) => ({ ...event, date: event.startsAt })));
+    const now = new Date();
+    await createDueRecurringEvents(now);
+    const events = await Event.find({
+      hidden: false,
+      $or: [
+        { startsAt: { $gte: now } },
+        { endsAt: { $gte: now } },
+      ],
+    }).sort({ startsAt: 1 }).lean();
+    res.json(events.map(publicEvent));
   }),
 );
 
@@ -525,13 +600,49 @@ router.post(
         details: [{ field: 'date', message: 'A valid event date is required.' }],
       });
     }
+    const durationMinutes = Number(req.body.durationMinutes);
+    const recurrenceDays = req.body.recurrenceDays === null || req.body.recurrenceDays === undefined || req.body.recurrenceDays === ""
+      ? null
+      : Number(req.body.recurrenceDays);
+    const votingStartsBeforeDays = req.body.votingStartsBeforeDays === undefined || req.body.votingStartsBeforeDays === null ? -1 : Number(req.body.votingStartsBeforeDays);
+    if (votingStartsBeforeDays !== -1 && (!Number.isInteger(votingStartsBeforeDays) || votingStartsBeforeDays < 1)) {
+      return res.status(422).json({ error: 'votingStartsBeforeDays must be -1 or a positive integer >= 1.' });
+    }
+    const votingEndsBeforeMinutes = req.body.votingEndsBeforeMinutes === undefined || req.body.votingEndsBeforeMinutes === null ? 0 : Number(req.body.votingEndsBeforeMinutes);
+    if (!Number.isInteger(votingEndsBeforeMinutes) || votingEndsBeforeMinutes < 0) {
+      return res.status(422).json({ error: 'votingEndsBeforeMinutes must be a positive integer.' });
+    }
+    const createDelayDays = Number(req.body.createDelayDays) || 0;
+    const maxParticipants = req.body.maxParticipants === undefined || req.body.maxParticipants === null || req.body.maxParticipants === "" ? null : Number(req.body.maxParticipants);
+    if (maxParticipants !== null && (!Number.isInteger(maxParticipants) || maxParticipants < 1)) {
+      return res.status(422).json({ error: 'maxParticipants must be a positive integer.' });
+    }
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10080) {
+      return res.status(422).json({ error: 'durationMinutes must be between 1 and 10080.' });
+    }
+    const startDate = new Date(startsAt);
+    if (Number.isNaN(startDate.getTime())) {
+      return res.status(422).json({ error: 'A valid event date is required.' });
+    }
+    if (startDate <= new Date()) return res.status(422).json({ error: 'Events must be scheduled for a future date and time.' });
+    if (recurrenceDays !== null && (!Number.isInteger(recurrenceDays) || recurrenceDays < 1 || recurrenceDays > 365)) {
+      return res.status(422).json({ error: 'recurrenceDays must be a positive integer between 1 and 365.' });
+    }
     const item = await Event.create({
       title: req.body.title,
       description: req.body.description,
-      startsAt,
+      startsAt: startDate,
+      endsAt: new Date(startDate.getTime() + durationMinutes * 60_000),
+      hidden: Boolean(req.body.hidden),
+      votingEnabled: Boolean(req.body.votingEnabled),
+      votingStartsBeforeDays,
+      votingEndsBeforeMinutes,
+      createDelayDays,
+      maxParticipants,
+      color: req.body.color || '#00f3ff',
+      recurrenceDays,
     });
-    const doc = item.toObject();
-    res.status(201).json({ ...doc, date: doc.startsAt });
+    res.status(201).json(publicEvent(item));
   }),
 );
 
@@ -541,14 +652,100 @@ router.patch(
   [param('id').isMongoId()],
   validate,
   asyncRoute(async (req, res) => {
-    const patch = { ...req.body };
-    if (patch.date && !patch.startsAt) {
-      patch.startsAt = patch.date;
+    const allowedFields = ['title', 'description', 'hidden', 'startsAt', 'date', 'durationMinutes', 'votingEnabled', 'recurrenceDays', 'votingStartsBeforeDays', 'votingEndsBeforeMinutes', 'createDelayDays', 'color', 'maxParticipants'];
+    const patch = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
+    const existing = await Event.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Event not found' });
+    const startsAt = patch.startsAt || patch.date || existing.startsAt;
+    const startDate = new Date(startsAt);
+    if (Number.isNaN(startDate.getTime())) return res.status(422).json({ error: 'A valid event date is required.' });
+    if (startDate <= new Date()) return res.status(422).json({ error: 'Events must be scheduled for a future date and time.' });
+    const durationMinutes = patch.durationMinutes === undefined
+      ? Math.max(1, Math.round(((existing.endsAt || existing.startsAt).getTime() - existing.startsAt.getTime()) / 60_000))
+      : Number(patch.durationMinutes);
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10080) {
+      return res.status(422).json({ error: 'durationMinutes must be between 1 and 10080.' });
     }
-    const item = await Event.findByIdAndUpdate(req.params.id, { $set: patch }, { new: true, runValidators: true });
-    if (!item) return res.status(404).json({ error: 'Event not found' });
-    const doc = item.toObject ? item.toObject() : item;
-    res.json({ ...doc, date: doc.startsAt });
+    if (patch.recurrenceDays !== undefined) {
+      patch.recurrenceDays = patch.recurrenceDays === null || patch.recurrenceDays === "" ? null : Number(patch.recurrenceDays);
+      if (patch.recurrenceDays !== null && (!Number.isInteger(patch.recurrenceDays) || patch.recurrenceDays < 1 || patch.recurrenceDays > 365)) {
+        return res.status(422).json({ error: 'recurrenceDays must be a positive integer between 1 and 365.' });
+      }
+    }
+    if (patch.votingStartsBeforeDays !== undefined) {
+      patch.votingStartsBeforeDays = patch.votingStartsBeforeDays === null || patch.votingStartsBeforeDays === "" ? -1 : Number(patch.votingStartsBeforeDays);
+      if (patch.votingStartsBeforeDays !== -1 && (!Number.isInteger(patch.votingStartsBeforeDays) || patch.votingStartsBeforeDays < 1)) {
+        return res.status(422).json({ error: 'votingStartsBeforeDays must be -1 or a positive integer >= 1.' });
+      }
+    }
+    if (patch.votingEndsBeforeMinutes !== undefined) {
+      patch.votingEndsBeforeMinutes = patch.votingEndsBeforeMinutes === null || patch.votingEndsBeforeMinutes === "" ? 0 : Number(patch.votingEndsBeforeMinutes);
+      if (!Number.isInteger(patch.votingEndsBeforeMinutes) || patch.votingEndsBeforeMinutes < 0) {
+        return res.status(422).json({ error: 'votingEndsBeforeMinutes must be a positive integer.' });
+      }
+    }
+    if (patch.maxParticipants !== undefined) {
+      patch.maxParticipants = patch.maxParticipants === null || patch.maxParticipants === "" ? null : Number(patch.maxParticipants);
+      if (patch.maxParticipants !== null && (!Number.isInteger(patch.maxParticipants) || patch.maxParticipants < 1)) {
+        return res.status(422).json({ error: 'maxParticipants must be a positive integer.' });
+      }
+    }
+    delete patch.date;
+    delete patch.durationMinutes;
+    patch.startsAt = startDate;
+    patch.endsAt = new Date(startDate.getTime() + durationMinutes * 60_000);
+    const item = await Event.findByIdAndUpdate(req.params.id, { $set: patch }, { returnDocument: 'after', runValidators: true });
+    res.json(publicEvent(item));
+  }),
+);
+
+router.post(
+  '/events/:id/participation',
+  [param('id').isMongoId()],
+  validate,
+  asyncRoute(async (req, res) => {
+    const { participantId, gameName, action } = req.body || {};
+    if (typeof participantId !== 'string' || !/^[a-zA-Z0-9-]{16,100}$/.test(participantId)) {
+      return res.status(422).json({ error: 'A valid participant id is required.' });
+    }
+    if (action !== 'join' && action !== 'leave') return res.status(422).json({ error: 'A valid participation action is required.' });
+    const now = new Date();
+    const event = await Event.findById(req.params.id).select('+participants.participantId');
+    if (!event || event.hidden || event.endsAt <= now) return res.status(404).json({ error: 'Event is no longer available.' });
+    if (!event.votingEnabled) return res.status(409).json({ error: 'Participation is not enabled for this event.' });
+    if (participationOpensAt(event) > now) return res.status(409).json({ error: 'Participation has not opened yet for this event.' });
+    if (participationClosesAt(event) <= now) return res.status(409).json({ error: 'Participation has already closed for this event.' });
+    const availableEvent = { _id: event._id, hidden: false, votingEnabled: true, endsAt: { $gt: now } };
+    let updated;
+    if (action === 'leave') {
+      updated = await Event.findOneAndUpdate(
+        availableEvent,
+        { $pull: { participants: { participantId } } },
+        { returnDocument: 'after' },
+      );
+    } else {
+      const name = typeof gameName === 'string' ? gameName.trim().slice(0, 40) : '';
+      if (!name) return res.status(422).json({ error: 'Your in-game name is required.' });
+      // Update an existing entry first. If none exists, atomically add one only
+      // when the participant id is still absent, preventing duplicate joins.
+      updated = await Event.findOneAndUpdate(
+        { ...availableEvent, 'participants.participantId': participantId },
+        { $set: { 'participants.$.gameName': name } },
+        { returnDocument: 'after' },
+      );
+      if (!updated) {
+        if (event.maxParticipants !== null && event.maxParticipants > 0 && event.participants.length >= event.maxParticipants) {
+          return res.status(409).json({ error: 'This event has reached the maximum number of participants.' });
+        }
+        updated = await Event.findOneAndUpdate(
+          { ...availableEvent, 'participants.participantId': { $ne: participantId } },
+          { $push: { participants: { participantId, gameName: name } } },
+          { returnDocument: 'after' },
+        );
+      }
+    }
+    if (!updated) return res.status(409).json({ error: 'Event participation changed. Please try again.' });
+    res.json(publicEvent(updated));
   }),
 );
 
@@ -848,4 +1045,5 @@ module.exports = {
   setUserOffline,
   Message,
   tally,
+  createDueRecurringEvents,
 };

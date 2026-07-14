@@ -3,14 +3,11 @@ import connectToDatabase from "@/lib/db";
 import Event from "@/models/Event";
 import { getAdminSession } from "@/lib/auth";
 
-export async function POST(req: NextRequest) {
-  const session = await getAdminSession();
-  if (!session) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
+export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/events/[id]">) {
+  if (!(await getAdminSession())) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   try {
-    await connectToDatabase();
+    const { id } = await ctx.params;
     const { title, description, date, hidden, durationMinutes, votingEnabled, recurrenceDays, votingStartsBeforeDays, votingEndsBeforeMinutes, createDelayDays, maxParticipants, color } = await req.json();
     const duration = Number(durationMinutes);
     const start = new Date(date);
@@ -34,34 +31,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Invalid voting ends before minutes" }, { status: 422 });
     }
 
-    const newEvent = new Event({
-      title,
-      description,
-      date: start,
-      endsAt: new Date(start.getTime() + duration * 60_000),
-      hidden,
-      votingEnabled: Boolean(votingEnabled),
-      votingStartsBeforeDays: votingStartsBefore,
-      votingEndsBeforeMinutes: votingEndsBefore,
-      createDelayDays: Number(createDelayDays) || 0,
-      maxParticipants: limit,
-      color: color || "#00f3ff",
-      recurrenceDays: recurrence
-    });
-    await newEvent.save();
-    return NextResponse.json(newEvent, { status: 201 });
-  } catch (error) {
+    await connectToDatabase();
+    const event = await Event.findByIdAndUpdate(
+      id,
+      {
+        title,
+        description,
+        date: start,
+        endsAt: new Date(start.getTime() + duration * 60_000),
+        hidden,
+        votingEnabled: Boolean(votingEnabled),
+        recurrenceDays: recurrence,
+        votingStartsBeforeDays: votingStartsBefore,
+        votingEndsBeforeMinutes: votingEndsBefore,
+        createDelayDays: Number(createDelayDays) || 0,
+        maxParticipants: limit,
+        color: color || "#00f3ff"
+      },
+      { new: true, runValidators: true },
+    );
+    return event
+      ? NextResponse.json(event)
+      : NextResponse.json({ message: "Event not found" }, { status: 404 });
+  } catch {
     return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
   }
 }
 
-export async function GET() {
+export async function DELETE(_req: NextRequest, ctx: RouteContext<"/api/events/[id]">) {
+  if (!(await getAdminSession())) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+
   try {
+    const { id } = await ctx.params;
     await connectToDatabase();
-    const now = new Date();
-    const events = await Event.find({ hidden: false, $or: [{ date: { $gte: now } }, { endsAt: { $gte: now } }] }).sort({ date: "asc" });
-    return NextResponse.json(events, { status: 200 });
-  } catch (error) {
+    const event = await Event.findByIdAndDelete(id);
+    return event
+      ? new NextResponse(null, { status: 204 })
+      : NextResponse.json({ message: "Event not found" }, { status: 404 });
+  } catch {
     return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
   }
 }

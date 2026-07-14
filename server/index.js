@@ -10,7 +10,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const cron = require('node-cron');
 const { Server } = require('socket.io');
 const { port, mongoUri, clientOrigin, assertConfig } = require('./config');
-const { router, createChatUser, setUserOffline, Message, tally } = require('./routes');
+const { router, createChatUser, setUserOffline, Message, tally, createDueRecurringEvents } = require('./routes');
 const { Settings, SVSHistory, User } = require('./models');
 const { errorHandler } = require('./middleware');
 
@@ -22,17 +22,78 @@ const rejectMongoOperators = (req, res, next) => {
   if (requestData.some((value) => value && mongoSanitize.has(value))) return res.status(400).json({ error: 'Invalid request data' });
   next();
 };
-const SVS_BASE_DATE = new Date(Date.UTC(2026, 6, 4));
-const SVS_UPDATE_ANCHOR = Date.UTC(2026, 6, 13); // First automatic refresh: Monday, 13 July 2026.
+const SVS_BASE_DATE = new Date(Date.UTC(2026, 6, 4)); // Current latest SVS Saturday: July 4, 2026 (W27).
+const SVS_UPDATE_ANCHOR = Date.UTC(2026, 6, 20); // Advance fires Monday July 20 → stored date July 18 (W29) → Aug 1 (W31)…
 const DAY = 24 * 60 * 60 * 1000;
 const isoWeek = (date) => { const value = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())); value.setUTCDate(value.getUTCDate() + 4 - (value.getUTCDay() || 7)); const yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1)); return `${value.getUTCFullYear()}-W${String(Math.ceil((((value - yearStart) / DAY) + 1) / 7)).padStart(2, '0')}`; };
-const svsDateFromWeek = (week) => { const [year, number] = week.split('-W').map(Number); const jan4 = new Date(Date.UTC(year, 0, 4)); const monday = new Date(jan4); monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (number - 1) * 7); monday.setUTCDate(monday.getUTCDate() + 5); return monday; };
+const svsDateFromWeek = (week) => { const [year, number] = week.split('-W').map(Number); const jan4 = new Date(Date.UTC(year, 0, 4)); const monday = new Date(jan4); monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (number - 1) * 7); return monday; };
 const newYorkDateKey = (date = new Date()) => { const fields = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const get = (type) => fields.find((field) => field.type === type).value; return `${get('year')}-${get('month')}-${get('day')}`; };
-const scheduledSvsUpdates = (date = new Date()) => { const offset = Date.parse(`${newYorkDateKey(date)}T00:00:00Z`) - SVS_UPDATE_ANCHOR; return offset < 0 ? 0 : Math.floor(offset / (14 * DAY)) + 1; };
-async function ensureSvsDates() { const entries = await SVSHistory.find({ date: { $exists: false } }); await Promise.all(entries.map((entry) => SVSHistory.updateOne({ _id: entry._id }, { $set: { date: svsDateFromWeek(entry.week) } }))); }
-async function advanceSvsHistory() { const entries = await SVSHistory.find().sort({ position: 1 }); await Promise.all(entries.map((entry) => { const date = new Date(entry.date || svsDateFromWeek(entry.week)); date.setUTCDate(date.getUTCDate() + 14); const week = isoWeek(date); return SVSHistory.updateOne({ _id: entry._id }, { $set: { date, week, url: `https://svs.info/server/1895/svs/${week}` } }); })); }
-async function advanceSvsIfDue() { const totalDue = scheduledSvsUpdates(); if (!totalDue) return; const state = await Settings.findOne({ key: 'svs-schedule' }).lean(); const completed = state?.lastSvsAutoAdvance ? scheduledSvsUpdates(new Date(`${state.lastSvsAutoAdvance}T12:00:00Z`)) : 0; for (let update = completed; update < totalDue; update += 1) await advanceSvsHistory(); const lastDueDate = new Date(SVS_UPDATE_ANCHOR + (totalDue - 1) * 14 * DAY).toISOString().slice(0, 10); await Settings.updateOne({ key: 'svs-schedule' }, { $set: { lastSvsAutoAdvance: lastDueDate }, $setOnInsert: { key: 'svs-schedule' } }, { upsert: true }); }
-async function seedSvs() { if (await SVSHistory.countDocuments()) return; await SVSHistory.insertMany(Array.from({length:10},(_,index)=>{const date = new Date(SVS_BASE_DATE); date.setUTCDate(date.getUTCDate() - index * 14); const week = isoWeek(date); return {position:index+1,date,week,url:`https://svs.info/server/1895/svs/${week}`};})); }
+// Returns how many 14-day advances have been due since SVS_UPDATE_ANCHOR, based on current NY date.
+const scheduledSvsUpdates = (date = new Date()) => {
+  const offset = Date.parse(`${newYorkDateKey(date)}T00:00:00Z`) - SVS_UPDATE_ANCHOR;
+  return offset < 0 ? 0 : Math.floor(offset / (14 * DAY)) + 1;
+};
+
+// Fills in missing `date` fields from legacy week strings (migration guard).
+async function ensureSvsDates() {
+  const entries = await SVSHistory.find({ date: { $exists: false } });
+  if (!entries.length) return;
+  await Promise.all(entries.map((entry) => SVSHistory.updateOne({ _id: entry._id }, { $set: { date: svsDateFromWeek(entry.week) } })));
+}
+
+// Shifts every SVS entry forward by exactly 14 days.
+async function advanceSvsHistory() {
+  const entries = await SVSHistory.find().sort({ position: 1 });
+  await Promise.all(entries.map((entry) => {
+    const date = new Date(entry.date || svsDateFromWeek(entry.week));
+    date.setUTCDate(date.getUTCDate() + 14);
+    const week = isoWeek(date);
+    return SVSHistory.updateOne({ _id: entry._id }, { $set: { date, week, url: `https://svs.info/server/1895/svs/${week}` } });
+  }));
+}
+
+// Advance SVS history only for missed scheduled updates since SVS_UPDATE_ANCHOR.
+// Uses DB state exclusively — safe across crashes, restarts, and cron overlaps.
+async function advanceSvsIfDue() {
+  const totalDue = scheduledSvsUpdates();
+  if (!totalDue) return; // Nothing due yet (before first anchor date).
+
+  // Read how many advances have already been applied from DB (not in-memory).
+  const state = await Settings.findOne({ key: 'svs-schedule' }).lean();
+  const completed = state?.lastSvsAutoAdvance
+    ? scheduledSvsUpdates(new Date(`${state.lastSvsAutoAdvance}T12:00:00Z`))
+    : 0;
+
+  if (completed >= totalDue) return; // Already up to date — nothing to do.
+
+  const missing = totalDue - completed;
+  console.log(`[SVS] Applying ${missing} missed advance(s) (completed=${completed}, due=${totalDue}).`);
+
+  for (let i = 0; i < missing; i += 1) await advanceSvsHistory();
+
+  // Persist the last applied advance date so future restarts skip it.
+  const lastDueDate = new Date(SVS_UPDATE_ANCHOR + (totalDue - 1) * 14 * DAY).toISOString().slice(0, 10);
+  await Settings.updateOne(
+    { key: 'svs-schedule' },
+    { $set: { lastSvsAutoAdvance: lastDueDate }, $setOnInsert: { key: 'svs-schedule' } },
+    { upsert: true }
+  );
+  console.log(`[SVS] Advanced to ${lastDueDate}.`);
+}
+
+// Only seeds from SVS_BASE_DATE if the collection is empty (first-ever run).
+// On every subsequent restart the DB data is left untouched.
+async function seedSvs() {
+  const count = await SVSHistory.countDocuments();
+  if (count > 0) return;
+  console.log('[SVS] Empty collection detected — seeding initial history from', SVS_BASE_DATE.toISOString().slice(0, 10));
+  await SVSHistory.insertMany(Array.from({ length: 10 }, (_, index) => {
+    const date = new Date(SVS_BASE_DATE);
+    date.setUTCDate(date.getUTCDate() - index * 14);
+    const week = isoWeek(date);
+    return { position: index + 1, date, week, url: `https://svs.info/server/1895/svs/${week}` };
+  }));
+}
 let isConnected = false;
 async function connectDb() {
   if (isConnected || mongoose.connection.readyState >= 1) {
@@ -45,6 +106,7 @@ async function connectDb() {
   await seedSvs();
   await ensureSvsDates();
   await advanceSvsIfDue();
+  await createDueRecurringEvents();
   isConnected = true;
 }
 
@@ -163,6 +225,6 @@ if (require.main === module) {
   });
 
   cron.schedule('0 0 * * 1', advanceSvsIfDue, { timezone: 'America/New_York' });
+  cron.schedule('*/5 * * * *', () => createDueRecurringEvents().catch((error) => console.error('Recurring events task failed:', error)), { timezone: 'America/New_York' });
   server.listen(port, () => console.log(`HOS API listening on ${port}`));
 }
-

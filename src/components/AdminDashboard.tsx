@@ -66,6 +66,14 @@ type AdminEvent = {
   startsAt: string;
   date: string;
   hidden: boolean;
+  votingEnabled?: boolean;
+  votingStartsBeforeDays?: number;
+  votingEndsBeforeMinutes?: number;
+  createDelayDays?: number;
+  maxParticipants?: number | null;
+  recurrenceDays?: number | null;
+  endsAt?: string;
+  color?: string;
 };
 
 function parseDateTimeInTimezone(dateTimeStr: string, timeZone: string): Date {
@@ -397,6 +405,7 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [toolsEditMode, setToolsEditMode] = useState(false);
+  const [editingToolIds, setEditingToolIds] = useState<string[]>([]);
   const [svsEditMode, setSvsEditMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -409,6 +418,28 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [eventDescription, setEventDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventHidden, setEventHidden] = useState(false);
+  const [eventVotingEnabled, setEventVotingEnabled] = useState(false);
+  const [eventRecurrenceDays, setEventRecurrenceDays] = useState<number | null>(null);
+  const [eventVotingStartsBeforeDays, setEventVotingStartsBeforeDays] = useState(-1);
+  const [eventDurationMinutes, setEventDurationMinutes] = useState(60);
+  const [eventColor, setEventColor] = useState("#00f3ff");
+  const [eventRepeatEnabled, setEventRepeatEnabled] = useState(false);
+  const [showRepeatConfigModal, setShowRepeatConfigModal] = useState(false);
+  const [showVotingConfigModal, setShowVotingConfigModal] = useState(false);
+  const [isNewVotingConfig, setIsNewVotingConfig] = useState(false);
+  const [tempRecurrenceOption, setTempRecurrenceOption] = useState<string>("7");
+  const [tempRecurrenceDays, setTempRecurrenceDays] = useState<number>(7);
+  const [eventCreateDelayDays, setEventCreateDelayDays] = useState(0);
+  const [tempCreateDelayOption, setTempCreateDelayOption] = useState<string>("0");
+  const [tempCreateDelayDays, setTempCreateDelayDays] = useState<number>(2);
+  const [tempVotingStartsBeforeOption, setTempVotingStartsBeforeOption] = useState<string>("always");
+  const [tempVotingStartsBeforeDays, setTempVotingStartsBeforeDays] = useState<number>(1);
+  const [eventMaxParticipantsEnabled, setEventMaxParticipantsEnabled] = useState(false);
+  const [eventMaxParticipantsLimit, setEventMaxParticipantsLimit] = useState(20);
+  const [eventVotingEndsBeforeMinutes, setEventVotingEndsBeforeMinutes] = useState(0);
+  const [tempVotingEndsBeforeOption, setTempVotingEndsBeforeOption] = useState<string>("0");
+  const [tempVotingEndsBeforeHours, setTempVotingEndsBeforeHours] = useState<number>(1);
+  const [tempVotingEndsBeforeMins, setTempVotingEndsBeforeMins] = useState<number>(0);
 
   // Tool creation modal states
   const [showToolModal, setShowToolModal] = useState(false);
@@ -489,6 +520,16 @@ export default function AdminDashboard({ username }: { username: string }) {
     setEventDescription("");
     setEventDate("");
     setEventHidden(false);
+    setEventVotingEnabled(false);
+    setEventRecurrenceDays(null);
+    setEventVotingStartsBeforeDays(-1);
+    setEventVotingEndsBeforeMinutes(0);
+    setEventCreateDelayDays(0);
+    setEventMaxParticipantsEnabled(false);
+    setEventMaxParticipantsLimit(20);
+    setEventDurationMinutes(60);
+    setEventColor(draft.primaryColor || "#00f3ff");
+    setEventRepeatEnabled(false);
     setShowCreateModal(true);
   };
 
@@ -498,6 +539,26 @@ export default function AdminDashboard({ username }: { username: string }) {
     setEventDescription(event.description || "");
     setEventDate(formatUtcToTimezone(event.date, "America/New_York"));
     setEventHidden(event.hidden || false);
+    setEventVotingEnabled(event.votingEnabled || false);
+    setEventRecurrenceDays(event.recurrenceDays || null);
+    setEventVotingStartsBeforeDays(event.votingStartsBeforeDays === undefined || event.votingStartsBeforeDays === null || event.votingStartsBeforeDays === 0 ? -1 : event.votingStartsBeforeDays);
+    setEventVotingEndsBeforeMinutes(event.votingEndsBeforeMinutes || 0);
+    setEventCreateDelayDays(event.createDelayDays || 0);
+    setEventMaxParticipantsEnabled(event.maxParticipants !== null && event.maxParticipants !== undefined && event.maxParticipants > 0);
+    setEventMaxParticipantsLimit(event.maxParticipants || 20);
+    if (event.createDelayDays && event.createDelayDays > 0) {
+      setTempCreateDelayOption("custom");
+      setTempCreateDelayDays(event.createDelayDays);
+    } else {
+      setTempCreateDelayOption("0");
+      setTempCreateDelayDays(2);
+    }
+    const duration = event.endsAt && event.startsAt
+      ? Math.max(1, Math.round((new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()) / 60_000))
+      : 60;
+    setEventDurationMinutes(duration);
+    setEventColor(event.color || draft.primaryColor || "#00f3ff");
+    setEventRepeatEnabled(event.recurrenceDays !== null && event.recurrenceDays !== undefined && event.recurrenceDays > 0);
     setShowCreateModal(true);
   };
 
@@ -538,6 +599,14 @@ export default function AdminDashboard({ username }: { username: string }) {
         description: eventDescription,
         date: parseDateTimeInTimezone(eventDate, "America/New_York").toISOString(),
         hidden: eventHidden,
+        durationMinutes: eventDurationMinutes,
+        votingEnabled: eventVotingEnabled,
+        recurrenceDays: eventRecurrenceDays,
+        votingStartsBeforeDays: eventVotingStartsBeforeDays,
+        votingEndsBeforeMinutes: eventVotingEndsBeforeMinutes,
+        createDelayDays: eventCreateDelayDays,
+        maxParticipants: eventMaxParticipantsEnabled ? eventMaxParticipantsLimit : null,
+        color: eventColor,
       };
 
       if (editingEventId) {
@@ -560,6 +629,16 @@ export default function AdminDashboard({ username }: { username: string }) {
       setEventDescription("");
       setEventDate("");
       setEventHidden(false);
+      setEventVotingEnabled(false);
+      setEventRecurrenceDays(null);
+      setEventVotingStartsBeforeDays(-1);
+      setEventVotingEndsBeforeMinutes(0);
+      setEventCreateDelayDays(0);
+      setEventMaxParticipantsEnabled(false);
+      setEventMaxParticipantsLimit(20);
+      setEventDurationMinutes(60);
+      setEventColor(draft.primaryColor || "#00f3ff");
+      setEventRepeatEnabled(false);
       setEditingEventId(null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save event.");
@@ -645,6 +724,7 @@ export default function AdminDashboard({ username }: { username: string }) {
           }
           if (section === "Tools") {
             setToolsEditMode(false);
+            setEditingToolIds([]);
           }
           if (section === "Dashboard" || section === "Analytics") {
             void loadSummary(range);
@@ -664,6 +744,8 @@ export default function AdminDashboard({ username }: { username: string }) {
       isDestructive: true,
       onConfirm: () => {
         setDraft(config);
+        setToolsEditMode(false);
+        setEditingToolIds([]);
         setStatus("Changes reset.");
       },
     });
@@ -676,7 +758,32 @@ export default function AdminDashboard({ username }: { username: string }) {
     }));
   };
 
+  const discardToolChanges = (id: string) => {
+    const tool = draft.tools.find((t) => t.id === id);
+    const original = config.tools.find((t) => t.id === id);
+    const toolTitle = tool ? tool.title : "this tool";
 
+    showConfirm({
+      title: "Discard Tool Changes",
+      message: `Are you sure you want to discard your unsaved changes for "${toolTitle}"?`,
+      confirmLabel: "Discard",
+      isDestructive: true,
+      onConfirm: () => {
+        if (original) {
+          setDraft((current) => ({
+            ...current,
+            tools: current.tools.map((t) => (t.id === id ? original : t)),
+          }));
+        } else {
+          setDraft((current) => ({
+            ...current,
+            tools: current.tools.filter((t) => t.id !== id),
+          }));
+        }
+        setEditingToolIds((prev) => prev.filter((item) => item !== id));
+      },
+    });
+  };
 
   const removeTool = (id: string) => {
     const tool = draft.tools.find((t) => t.id === id);
@@ -702,6 +809,7 @@ export default function AdminDashboard({ username }: { username: string }) {
             ...current,
             tools: updatedTools,
           }));
+          setEditingToolIds((prev) => prev.filter((item) => item !== id));
           updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
           setStatus(`Deleted and saved tool "${toolTitle}" successfully.`);
           await refreshConfig();
@@ -737,6 +845,7 @@ export default function AdminDashboard({ username }: { username: string }) {
       });
       updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
       setStatus(`Saved changes to "${toolToSave.title}" successfully.`);
+      setEditingToolIds((prev) => prev.filter((id) => id !== toolToSave.id));
       await refreshConfig();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save tool changes.");
@@ -1049,6 +1158,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                   const Icon = FaIcons[tool.icon as keyof typeof FaIcons] as
                     | React.ComponentType<{ className?: string }>
                     | undefined;
+                  const isEditable = toolsEditMode || editingToolIds.includes(tool.id);
 
                   return (
                     <div key={tool.id} className="glass-panel rounded-xl p-4">
@@ -1057,13 +1167,13 @@ export default function AdminDashboard({ username }: { username: string }) {
                           <input
                             value={tool.title}
                             onChange={(event) => alterTool(tool.id, { title: event.target.value })}
-                            disabled={!toolsEditMode}
+                            disabled={!isEditable}
                             className="w-full bg-transparent text-sm font-bold text-white outline-none"
                           />
                           <input
                             value={tool.category}
                             onChange={(event) => alterTool(tool.id, { category: event.target.value })}
-                            disabled={!toolsEditMode}
+                            disabled={!isEditable}
                             className="mt-1 w-full bg-transparent text-[11px] uppercase tracking-[0.14em] text-hos-red outline-none"
                           />
                         </div>
@@ -1071,7 +1181,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                         <textarea
                           value={tool.description}
                           onChange={(event) => alterTool(tool.id, { description: event.target.value })}
-                          disabled={!toolsEditMode}
+                          disabled={!isEditable}
                           rows={3}
                           className="w-full rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none resize-y"
                           placeholder="Tool description"
@@ -1081,7 +1191,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                           <input
                             value={tool.link}
                             onChange={(event) => alterTool(tool.id, { link: event.target.value })}
-                            disabled={!toolsEditMode}
+                            disabled={!isEditable}
                             className="w-full rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
                             placeholder="/tools or https://..."
                           />
@@ -1097,7 +1207,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                                   <button
                                     key={name}
                                     onClick={() => alterTool(tool.id, { icon: name })}
-                                    disabled={!toolsEditMode}
+                                    disabled={!isEditable}
                                     title={name}
                                     className={`grid h-7 w-7 place-items-center rounded-md border text-xs transition ${
                                       selected
@@ -1119,13 +1229,13 @@ export default function AdminDashboard({ username }: { username: string }) {
                               type="color"
                               value={tool.color}
                               onChange={(event) => alterTool(tool.id, { color: event.target.value })}
-                              disabled={!toolsEditMode}
+                              disabled={!isEditable}
                               className="h-8 w-10 rounded border border-white/10 bg-transparent"
                             />
                             <input
                               value={tool.color}
                               onChange={(event) => alterTool(tool.id, { color: event.target.value })}
-                              disabled={!toolsEditMode}
+                              disabled={!isEditable}
                               className="w-full rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
                             />
                           </div>
@@ -1134,12 +1244,12 @@ export default function AdminDashboard({ username }: { username: string }) {
                               type="number"
                               value={tool.order}
                               onChange={(event) => alterTool(tool.id, { order: Number(event.target.value) || 1 })}
-                              disabled={!toolsEditMode}
+                              disabled={!isEditable}
                               className="w-14 rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
                             />
                             <button
                               type="button"
-                              disabled={!toolsEditMode}
+                              disabled={!isEditable}
                               onClick={() => alterTool(tool.id, { visible: !tool.visible })}
                               style={tool.visible ? { backgroundColor: `${draft.primaryColor}20`, borderColor: draft.primaryColor, color: draft.primaryColor } : undefined}
                               className={`rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition border ${
@@ -1158,7 +1268,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                             {Icon ? <Icon className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
                           </div>
                           <div className="flex items-center gap-1">
-                            {toolsEditMode && isToolEdited(tool) && (
+                            {isEditable && isToolEdited(tool) && (
                               <button
                                 onClick={() => void saveSingleTool(tool)}
                                 style={{ backgroundColor: draft.primaryColor }}
@@ -1167,24 +1277,46 @@ export default function AdminDashboard({ username }: { username: string }) {
                                 Save
                               </button>
                             )}
+                            {!toolsEditMode && (
+                              editingToolIds.includes(tool.id) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => discardToolChanges(tool.id)}
+                                  className="rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-400 transition hover:bg-amber-500/10"
+                                >
+                                  Discard
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingToolIds((prev) => [...prev, tool.id])}
+                                  className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-300 transition hover:bg-white/5"
+                                >
+                                  Edit
+                                </button>
+                              )
+                            )}
                             <button
+                              type="button"
                               onClick={() => moveTool(tool.id, "up")}
-                              disabled={!toolsEditMode}
-                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400"
+                              disabled={!isEditable}
+                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Up
                             </button>
                             <button
+                              type="button"
                               onClick={() => moveTool(tool.id, "down")}
-                              disabled={!toolsEditMode}
-                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400"
+                              disabled={!isEditable}
+                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Down
                             </button>
                             <button
+                              type="button"
                               onClick={() => removeTool(tool.id)}
-                              disabled={!toolsEditMode}
-                              className="rounded border border-red-900/60 px-2 py-1 text-[11px] text-red-300"
+                              disabled={!isEditable}
+                              className="rounded border border-red-900/60 px-2 py-1 text-[11px] text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Delete
                             </button>
@@ -1595,7 +1727,7 @@ export default function AdminDashboard({ username }: { username: string }) {
                         <X size={16} />
                       </button>
                     </div>
-                    <form onSubmit={handleEventSubmit} className="mt-4 space-y-4">
+                    <form id="event-form" onSubmit={handleEventSubmit} className="mt-4 space-y-4 max-h-[65vh] overflow-y-auto pr-1">
                       <div>
                         <Field label="Event Title" value={eventTitle} onChange={setEventTitle} />
                       </div>
@@ -1611,48 +1743,563 @@ export default function AdminDashboard({ username }: { username: string }) {
                           />
                         </label>
                       </div>
-                      <div>
-                        <label className="text-sm text-zinc-300 block">
-                          Event Date & Time (Local)
-                          <input
-                            type="datetime-local"
-                            value={eventDate}
-                            max="9999-12-31T23:59"
-                            onChange={(e) => setEventDate(e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
-                            required
-                          />
-                        </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-zinc-300 block">
+                            Event Date & Time (EDT)
+                            <input
+                              type="datetime-local"
+                              value={eventDate}
+                              max="9999-12-31T23:59"
+                              onChange={(e) => setEventDate(e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
+                              required
+                            />
+                          </label>
+                        </div>
+                        <div>
+                          <label className="text-xs text-zinc-300 block">
+                            Show as ongoing for (minutes)
+                            <input
+                              type="number"
+                              min={1}
+                              value={eventDurationMinutes}
+                              onChange={(e) => setEventDurationMinutes(Math.max(1, Number(e.target.value) || 60))}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
+                              required
+                            />
+                          </label>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 py-1">
-                        <input
-                          type="checkbox"
-                          id="event-hidden"
-                          checked={eventHidden}
-                          onChange={(e) => setEventHidden(e.target.checked)}
-                          className="h-4 w-4 bg-transparent border-white/10 text-hos-red focus:ring-0 focus:ring-offset-0"
-                        />
-                        <label htmlFor="event-hidden" className="text-xs font-semibold text-zinc-300 select-none">
-                          Hide event from alliance view
-                        </label>
+                      <div className="text-[10px] text-zinc-400 space-y-0.5 leading-tight">
+                        <p>* Please schedule using Eastern Time (EST / EDT, GMT-4).</p>
+                        <p>* After it starts, this event stays visible until this duration has passed.</p>
                       </div>
-                      <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateModal(false)}
-                          className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          style={{ backgroundColor: draft.primaryColor }}
-                          className="rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110"
-                        >
-                          {editingEventId ? "Save Changes" : "Save Event"}
-                        </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                        <div>
+                          <label className="text-sm text-zinc-300 block">Event Theme Color</label>
+                          <div className="mt-1 flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={eventColor}
+                              onChange={(e) => setEventColor(e.target.value)}
+                              className="h-9 w-12 rounded border border-white/10 bg-transparent cursor-pointer"
+                            />
+                            <input
+                              value={eventColor}
+                              onChange={(e) => setEventColor(e.target.value)}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-2 py-2 text-xs text-zinc-300 outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/35 px-3 py-2 h-[38px]">
+                          <label htmlFor="event-hidden" className="text-xs font-semibold text-zinc-300 select-none">
+                            Hide this event
+                          </label>
+                          <button
+                            type="button"
+                            id="event-hidden"
+                            role="switch"
+                            aria-checked={eventHidden}
+                            onClick={() => setEventHidden(!eventHidden)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                              eventHidden ? 'bg-hos-red' : 'bg-white/15'
+                            }`}
+                          >
+                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                              eventHidden ? 'translate-x-4' : 'translate-x-0'
+                            }`} />
+                          </button>
+                        </div>
                       </div>
+
+                      <div className="border-t border-white/5 pt-3 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-zinc-300">Repeat event</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={eventRepeatEnabled}
+                              onClick={() => {
+                                if (eventRepeatEnabled) {
+                                  setEventRepeatEnabled(false);
+                                  setEventRecurrenceDays(null);
+                                } else {
+                                  setTempRecurrenceOption("7");
+                                  setTempRecurrenceDays(7);
+                                  if (eventCreateDelayDays && eventCreateDelayDays > 0) {
+                                    setTempCreateDelayOption("custom");
+                                    setTempCreateDelayDays(eventCreateDelayDays);
+                                  } else {
+                                    setTempCreateDelayOption("0");
+                                    setTempCreateDelayDays(2);
+                                  }
+                                  if (eventVotingStartsBeforeDays === -1) {
+                                    setTempVotingStartsBeforeOption("always");
+                                    setTempVotingStartsBeforeDays(1);
+                                  } else {
+                                    setTempVotingStartsBeforeOption("custom");
+                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                  }
+                                  setShowRepeatConfigModal(true);
+                                }
+                              }}
+                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                eventRepeatEnabled ? 'bg-hos-red' : 'bg-white/15'
+                              }`}
+                            >
+                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                eventRepeatEnabled ? 'translate-x-4' : 'translate-x-0'
+                              }`} />
+                            </button>
+                          </div>
+                        </div>
+                        {eventRepeatEnabled && eventRecurrenceDays !== null && (
+                          <div className="space-y-0.5 pl-1 border-l border-white/10 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
+                            <p>• Repeats every <span className="text-zinc-200 font-semibold">{eventRecurrenceDays} day{eventRecurrenceDays > 1 ? "s" : ""}</span></p>
+                            <p>• Next occurrence: <span className="text-zinc-200 font-semibold">{eventCreateDelayDays === 0 ? "Instantly after old ends" : `${eventCreateDelayDays} day${eventCreateDelayDays > 1 ? "s" : ""} delay`}</span></p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (eventRecurrenceDays !== null) {
+                                  const isStandard = ["1", "3", "7", "14", "30"].includes(String(eventRecurrenceDays));
+                                  setTempRecurrenceOption(isStandard ? String(eventRecurrenceDays) : "custom");
+                                  setTempRecurrenceDays(eventRecurrenceDays);
+                                } else {
+                                  setTempRecurrenceOption("7");
+                                  setTempRecurrenceDays(7);
+                                }
+                                if (eventCreateDelayDays && eventCreateDelayDays > 0) {
+                                  setTempCreateDelayOption("custom");
+                                  setTempCreateDelayDays(eventCreateDelayDays);
+                                } else {
+                                  setTempCreateDelayOption("0");
+                                  setTempCreateDelayDays(2);
+                                }
+                                if (eventVotingStartsBeforeDays === -1) {
+                                  setTempVotingStartsBeforeOption("always");
+                                  setTempVotingStartsBeforeDays(1);
+                                } else {
+                                  setTempVotingStartsBeforeOption("custom");
+                                  setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                }
+                                if (eventVotingEndsBeforeMinutes === 0) {
+                                  setTempVotingEndsBeforeOption("0");
+                                  setTempVotingEndsBeforeHours(1);
+                                  setTempVotingEndsBeforeMins(0);
+                                } else {
+                                  setTempVotingEndsBeforeOption("custom");
+                                  setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                  setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                }
+                                setShowRepeatConfigModal(true);
+                              }}
+                              className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline"
+                            >
+                              Edit Repeat Settings
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="border-t border-white/5 my-2 pt-2 space-y-2">
+                        <div className="flex flex-col gap-1 py-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <label htmlFor="event-voting" className="text-xs font-semibold text-zinc-300 select-none">
+                              Enable participation voting
+                            </label>
+                            <button
+                              type="button"
+                              id="event-voting"
+                              role="switch"
+                              aria-checked={eventVotingEnabled}
+                              onClick={() => {
+                                const enabling = !eventVotingEnabled;
+                                setEventVotingEnabled(enabling);
+                                if (enabling) {
+                                  setIsNewVotingConfig(true);
+                                  if (eventVotingStartsBeforeDays === -1) {
+                                    setTempVotingStartsBeforeOption('always');
+                                    setTempVotingStartsBeforeDays(1);
+                                  } else {
+                                    setTempVotingStartsBeforeOption('custom');
+                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                  }
+                                  if (eventVotingEndsBeforeMinutes === 0) {
+                                    setTempVotingEndsBeforeOption('0');
+                                    setTempVotingEndsBeforeHours(1);
+                                    setTempVotingEndsBeforeMins(0);
+                                  } else {
+                                    setTempVotingEndsBeforeOption('custom');
+                                    setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                    setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                  }
+                                  setShowVotingConfigModal(true);
+                                }
+                              }}
+                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                eventVotingEnabled ? 'bg-hos-red' : 'bg-white/15'
+                              }`}
+                            >
+                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                eventVotingEnabled ? 'translate-x-4' : 'translate-x-0'
+                              }`} />
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-zinc-500">
+                            Members can join or leave and see the participant list.
+                          </p>
+                        </div>
+
+                        {eventVotingEnabled && (
+                          <div className="pl-6 pt-1 space-y-2 animate-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center justify-between gap-2">
+                              <label htmlFor="event-max-voting" className="text-xs font-semibold text-zinc-300 select-none">
+                                Limit maximum participants
+                              </label>
+                              <button
+                                type="button"
+                                id="event-max-voting"
+                                role="switch"
+                                aria-checked={eventMaxParticipantsEnabled}
+                                onClick={() => setEventMaxParticipantsEnabled(!eventMaxParticipantsEnabled)}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                  eventMaxParticipantsEnabled ? 'bg-hos-red' : 'bg-white/15'
+                                }`}
+                              >
+                                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                  eventMaxParticipantsEnabled ? 'translate-x-4' : 'translate-x-0'
+                                }`} />
+                              </button>
+                            </div>
+                            {eventMaxParticipantsEnabled && (
+                              <div className="animate-in slide-in-from-top-1 duration-200 pl-6">
+                                <label className="text-[11px] text-zinc-400 block mb-1">
+                                  Maximum Limit:
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={eventMaxParticipantsLimit}
+                                  onChange={(e) => setEventMaxParticipantsLimit(Math.max(1, Number(e.target.value) || 20))}
+                                  className="w-24 rounded-lg border border-white/10 bg-black/35 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                                  required
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {eventVotingEnabled && (
+                          <div className="pl-6 pt-1 flex flex-col gap-0.5 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>
+                                • Starts: <span className="text-zinc-200 font-semibold">{eventVotingStartsBeforeDays === -1 ? "Always open" : `${eventVotingStartsBeforeDays} day${eventVotingStartsBeforeDays > 1 ? "s" : ""} before`}</span>
+                              </span>
+                              <span>
+                                • Closes: <span className="text-zinc-200 font-semibold">{eventVotingEndsBeforeMinutes === 0 ? "At event start" : `${Math.floor(eventVotingEndsBeforeMinutes / 60)}h ${eventVotingEndsBeforeMinutes % 60}m before`}</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsNewVotingConfig(false);
+                                  if (eventVotingStartsBeforeDays === -1) {
+                                    setTempVotingStartsBeforeOption("always");
+                                    setTempVotingStartsBeforeDays(1);
+                                  } else {
+                                    setTempVotingStartsBeforeOption("custom");
+                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                  }
+                                  if (eventVotingEndsBeforeMinutes === 0) {
+                                    setTempVotingEndsBeforeOption("0");
+                                    setTempVotingEndsBeforeHours(1);
+                                    setTempVotingEndsBeforeMins(0);
+                                  } else {
+                                    setTempVotingEndsBeforeOption("custom");
+                                    setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                    setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                  }
+                                  setShowVotingConfigModal(true);
+                                }}
+                                className="text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline ml-1"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+
                     </form>
+                    <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateModal(false)}
+                        className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        form="event-form"
+                        style={{ backgroundColor: draft.primaryColor }}
+                        className="rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110"
+                      >
+                        {editingEventId ? "Save Changes" : "Save Event"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showRepeatConfigModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
+                  <div className="glass-panel w-full max-w-sm rounded-xl p-5 shadow-2xl border border-zinc-800 space-y-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                        Configure Repeat Settings
+                      </h4>
+                      <p className="text-[11px] text-zinc-400 mt-1">
+                        Specify details for this repeating event.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Repeat Frequency */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-300 block font-semibold">Frequency</label>
+                        <select
+                          value={tempRecurrenceOption}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTempRecurrenceOption(val);
+                            if (val !== "custom") {
+                              setTempRecurrenceDays(Number(val));
+                            }
+                          }}
+                          className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                        >
+                          <option value="1">Daily (Every 1 day)</option>
+                          <option value="3">Every 3 days</option>
+                          <option value="7">Weekly (Every 7 days)</option>
+                          <option value="14">Fortnightly (Every 14 days)</option>
+                          <option value="30">Monthly (Every 30 days)</option>
+                          <option value="custom">Custom Days...</option>
+                        </select>
+
+                        {tempRecurrenceOption === "custom" && (
+                          <div className="animate-in slide-in-from-top-1 duration-200 mt-2">
+                            <label className="text-[10px] text-zinc-400 block mb-1">Repeat Every (Days)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={365}
+                              value={tempRecurrenceDays}
+                              onChange={(e) => setTempRecurrenceDays(Math.max(1, Number(e.target.value) || 2))}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                              required
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Display Delay (Next occurrence creation delay) */}
+                      <div className="space-y-1.5 border-t border-white/5 pt-3">
+                        <label className="text-xs text-zinc-300 block font-semibold">
+                          Display next occurrence
+                        </label>
+                        <select
+                          value={tempCreateDelayOption}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTempCreateDelayOption(val);
+                            if (val === "0") {
+                              setTempCreateDelayDays(0);
+                            }
+                          }}
+                          className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                        >
+                          <option value="0">Instantly after the old event ends</option>
+                          <option value="custom">Custom delay after old event ends...</option>
+                        </select>
+
+                        {tempCreateDelayOption === "custom" && (
+                          <div className="animate-in slide-in-from-top-1 duration-200 mt-2">
+                            <label className="text-[10px] text-zinc-400 block mb-1">Delay in days:</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={tempRecurrenceDays}
+                              value={tempCreateDelayDays || 2}
+                              onChange={(e) => setTempCreateDelayDays(Math.max(1, Math.min(tempRecurrenceDays, Number(e.target.value) || 2)))}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                              required
+                            />
+                            <p className="text-[9px] text-zinc-500 mt-0.5">
+                              Max: {tempRecurrenceDays} days (cannot exceed repeat frequency)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex justify-end gap-2 border-t border-white/5 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRepeatConfigModal(false);
+                          if (eventRecurrenceDays === null) {
+                            setEventRepeatEnabled(false);
+                          }
+                        }}
+                        className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEventRecurrenceDays(tempRecurrenceDays);
+                          setEventCreateDelayDays(tempCreateDelayOption === "0" ? 0 : tempCreateDelayDays);
+                          setEventVotingStartsBeforeDays(tempVotingStartsBeforeOption === "always" ? -1 : tempVotingStartsBeforeDays);
+                          setEventVotingEndsBeforeMinutes(tempVotingEndsBeforeOption === "0" ? 0 : tempVotingEndsBeforeHours * 60 + tempVotingEndsBeforeMins);
+                          setEventRepeatEnabled(true);
+                          setShowRepeatConfigModal(false);
+                        }}
+                        className="rounded-lg bg-hos-red px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110"
+                      >
+                        Apply Settings
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showVotingConfigModal && (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm">
+                  <div className="glass-panel w-full max-w-sm rounded-2xl p-5">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 border-b border-white/10 pb-2">
+                      Voting Window Configuration
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-300 block font-semibold">
+                          When should voting open?
+                        </label>
+                        <select
+                          value={tempVotingStartsBeforeOption}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTempVotingStartsBeforeOption(val);
+                            if (val === "always") {
+                              setTempVotingStartsBeforeDays(1);
+                            }
+                          }}
+                          className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                        >
+                          <option value="always">Always open (from creation)</option>
+                          <option value="custom">Custom days before event starts...</option>
+                        </select>
+
+                        {tempVotingStartsBeforeOption === "custom" && (
+                          <div className="animate-in slide-in-from-top-1 duration-200 mt-2">
+                            <label className="text-[10px] text-zinc-400 block mb-1">Days before event:</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={eventRecurrenceDays || 365}
+                              value={tempVotingStartsBeforeDays}
+                              onChange={(e) => setTempVotingStartsBeforeDays(Math.max(1, Math.min(eventRecurrenceDays || 365, Number(e.target.value) || 1)))}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                              required
+                            />
+                            {eventRecurrenceDays !== null && (
+                              <p className="text-[9px] text-zinc-500 mt-0.5">
+                                Max: {eventRecurrenceDays} days (cannot exceed repeat frequency)
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 border-t border-white/5 pt-3">
+                        <label className="text-xs text-zinc-300 block font-semibold">
+                          When should voting close?
+                        </label>
+                        <select
+                          value={tempVotingEndsBeforeOption}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTempVotingEndsBeforeOption(val);
+                            if (val === "0") {
+                              setTempVotingEndsBeforeHours(1);
+                              setTempVotingEndsBeforeMins(0);
+                            }
+                          }}
+                          className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                        >
+                          <option value="0">At event start</option>
+                          <option value="custom">Custom time before event starts...</option>
+                        </select>
+
+                        {tempVotingEndsBeforeOption === "custom" && (
+                          <div className="animate-in slide-in-from-top-1 duration-200 mt-2 grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-zinc-400 block mb-1">Hours before:</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={8760}
+                                value={tempVotingEndsBeforeHours}
+                                onChange={(e) => setTempVotingEndsBeforeHours(Math.max(0, Math.min(8760, Number(e.target.value) || 0)))}
+                                className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-zinc-400 block mb-1">Minutes before:</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={59}
+                                value={tempVotingEndsBeforeMins}
+                                onChange={(e) => setTempVotingEndsBeforeMins(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                                className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                                required
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex justify-end gap-2 border-t border-white/5 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowVotingConfigModal(false);
+                          if (isNewVotingConfig) {
+                            setEventVotingEnabled(false);
+                          }
+                        }}
+                        className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEventVotingStartsBeforeDays(tempVotingStartsBeforeOption === "always" ? -1 : tempVotingStartsBeforeDays);
+                          setEventVotingEndsBeforeMinutes(tempVotingEndsBeforeOption === "0" ? 0 : tempVotingEndsBeforeHours * 60 + tempVotingEndsBeforeMins);
+                          setShowVotingConfigModal(false);
+                        }}
+                        className="rounded-lg bg-hos-red px-3 py-1.5 text-xs font-bold text-white transition hover:brightness-110"
+                      >
+                        Apply Settings
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

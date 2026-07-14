@@ -7,6 +7,7 @@ import { SiteProvider } from "@/components/SiteProvider";
 import SiteHeader from "@/components/SiteHeader";
 import PageBackButton from "@/components/PageBackButton";
 import SiteFooter from "@/components/SiteFooter";
+import GlobalNotifications from "@/components/GlobalNotifications";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,6 +47,7 @@ export default function RootLayout({
           <PageBackButton />
           <main className="relative z-10 flex-1 flex flex-col">{children}</main>
           <SiteFooter />
+          <GlobalNotifications />
         </SiteProvider>
       </body>
     </html>

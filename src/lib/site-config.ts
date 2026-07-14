@@ -9,11 +9,15 @@ export type SiteConfig = {
   chatMessagesLimitPerMin: number;
 };
 
-const svs = Array.from({ length: 10 }, (_, index) => ({
-  label: index === 0 ? "Latest SVS" : index === 1 ? "Previous SVS" : `SVS Archive ${index + 1}`,
-  date: new Date(Date.UTC(2026, 6, 4 - index * 14)).toISOString(),
-  url: `https://svs.info/server/1895/svs/2026-W${String(27 - index * 2).padStart(2, "0")}`,
-}));
+const svs = Array.from({ length: 10 }, (_, index) => {
+  const date = new Date(Date.UTC(2026, 6, 20));
+  date.setUTCDate(date.getUTCDate() - index * 14);
+  return {
+    label: index === 0 ? "Latest SVS" : index === 1 ? "Previous SVS" : `SVS Archive ${index + 1}`,
+    date: date.toISOString(),
+    url: `https://svs.info/server/1895/svs/2026-W${String(30 - index * 2).padStart(2, "0")}`,
+  };
+});
 
 export const defaultSiteConfig: SiteConfig = {
   title: "House Of Spanking", banner: "Power through unity · Server 1895",
