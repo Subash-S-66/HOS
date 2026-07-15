@@ -86,6 +86,7 @@ const createDueRecurringEvents = async (now = new Date()) => {
         title: claimed.title,
         description: claimed.description,
         startsAt: nextStart,
+        date: nextStart,
         endsAt: new Date(nextStart.getTime() + duration),
         timezone: claimed.timezone,
         hidden: claimed.hidden,

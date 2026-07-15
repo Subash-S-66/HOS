@@ -12,6 +12,7 @@ type Event = {
   title: string;
   description: string;
   date: string;
+  startsAt?: string;
   endsAt?: string;
   votingEnabled?: boolean;
   participationOpensAt?: string;
@@ -146,7 +147,7 @@ export default function Page() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {visibleEvents.map((event) => {
-            const start = new Date(event.date);
+            const start = new Date(event.date || event.startsAt || "");
             const closesAt = event.participationClosesAt ? new Date(event.participationClosesAt) : new Date(start.getTime() - (event.votingEndsBeforeMinutes || 0) * 60_000);
             const isClosed = now >= closesAt.getTime();
             const participationOpen = (!event.participationOpensAt || new Date(event.participationOpensAt).getTime() <= now) && !isClosed;
@@ -181,7 +182,7 @@ export default function Page() {
                     <Clock size={15} />
                     {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}
                   </p>
-                  <EventCountdown date={event.date} endsAt={event.endsAt} />
+                  <EventCountdown date={event.date || event.startsAt || ""} endsAt={event.endsAt} />
                 </div>
                 {event.votingEnabled && (
                   <>

@@ -4,6 +4,7 @@ export interface IEvent {
   title: string;
   description: string;
   date: Date;
+  startsAt?: Date; // Mapped to date for compatibility
   endsAt: Date;
   hidden: boolean;
   votingEnabled: boolean;
@@ -25,7 +26,8 @@ const EventParticipantSchema = new Schema({
 const EventSchema = new Schema<IEvent>({
   title: { type: String, required: true },
   description: { type: String, default: "" },
-  date: { type: Date, required: true },
+  date: { type: Date, required: true, default: function(this: any) { return this.startsAt; } },
+  startsAt: { type: Date, default: function(this: any) { return this.date; } },
   endsAt: { type: Date, required: true },
   hidden: { type: Boolean, default: false },
   votingEnabled: { type: Boolean, default: false },
