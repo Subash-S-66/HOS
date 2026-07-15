@@ -82,6 +82,15 @@ function noCache(req, res, next) {
  * Never leaks stack traces in production.
  */
 function errorHandler(error, _req, res, _next) {
+  if (error.name === 'ValidationError') {
+    return res.status(422).json({
+      error: 'Validation failed',
+      details: Object.values(error.errors).map((err) => ({
+        field: err.path,
+        message: err.message,
+      })),
+    });
+  }
   if (error.name === 'CastError') {
     return res.status(400).json({ error: 'Invalid resource identifier' });
   }
@@ -95,7 +104,7 @@ function errorHandler(error, _req, res, _next) {
     return res.status(400).json({ error: 'Invalid JSON body' });
   }
   // Log full error server-side only
-  console.error('[Error]', error.message || error);
+  console.error('[Error]', error.stack || error.message || error);
   // Never expose internals to clients
   res.status(500).json({ error: 'An unexpected error occurred' });
 }

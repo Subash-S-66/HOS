@@ -51,7 +51,8 @@ export async function POST(req: NextRequest) {
     await newEvent.save();
     return NextResponse.json(newEvent, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
+    console.error("POST /api/events error:", error);
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Something went wrong" }, { status: 500 });
   }
 }
 
@@ -62,6 +63,7 @@ export async function GET() {
     const events = await Event.find({ hidden: false, $or: [{ date: { $gte: now } }, { endsAt: { $gte: now } }] }).sort({ date: "asc" });
     return NextResponse.json(events, { status: 200 });
   } catch (error) {
-    return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
+    console.error("GET /api/events error:", error);
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Something went wrong" }, { status: 500 });
   }
 }

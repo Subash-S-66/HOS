@@ -24,7 +24,7 @@ const EventParticipantSchema = new Schema({
 
 const EventSchema = new Schema<IEvent>({
   title: { type: String, required: true },
-  description: { type: String, required: true },
+  description: { type: String, default: "" },
   date: { type: Date, required: true },
   endsAt: { type: Date, required: true },
   hidden: { type: Boolean, default: false },

@@ -53,8 +53,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/events/[id
     return event
       ? NextResponse.json(event)
       : NextResponse.json({ message: "Event not found" }, { status: 404 });
-  } catch {
-    return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
+  } catch (error) {
+    console.error("PATCH /api/events/[id] error:", error);
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Something went wrong" }, { status: 500 });
   }
 }
 
@@ -68,7 +69,8 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext<"/api/events/[
     return event
       ? new NextResponse(null, { status: 204 })
       : NextResponse.json({ message: "Event not found" }, { status: 404 });
-  } catch {
-    return NextResponse.json({ message: "Something went wrong" }, { status: 500 });
+  } catch (error) {
+    console.error("DELETE /api/events/[id] error:", error);
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Something went wrong" }, { status: 500 });
   }
 }
