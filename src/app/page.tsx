@@ -48,8 +48,31 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [messages.length, msgIndex]);
 
+  const SITE_URL = "https://www.evonyhos1895.me";
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "House of Spanking (HOS)",
+    alternateName: ["HOS", "HOS Evony", "House of Spanking Evony"],
+    url: SITE_URL,
+    logo: `${SITE_URL}/brand/hos-crest.png`,
+    image: `${SITE_URL}/brand/og-banner.png`,
+    description:
+      "House of Spanking (HOS) is the official alliance on Evony Server 1895. HOS is the dominant force on Server 1895, known for power, unity, and victory.",
+    keywords: "HOS, House of Spanking, Evony Server 1895, Evony alliance, Server 1895",
+    sameAs: [
+      "https://svs.info/server/1895/alliance/hos",
+    ],
+  };
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 pb-4 pt-20 sm:px-8 sm:pb-6 sm:pt-24 w-full max-w-7xl mx-auto min-h-screen relative overflow-hidden">
+      {/* JSON-LD Structured Data for Google */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
 
       {/* Secret Admin Entry Point */}
       <SecretAdminLogin />

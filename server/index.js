@@ -6,13 +6,14 @@ const compression = require('compression');
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const slowDown = require('express-slow-down');
 const mongoSanitize = require('express-mongo-sanitize');
 const cron = require('node-cron');
 const { Server } = require('socket.io');
 const { port, mongoUri, clientOrigin, assertConfig } = require('./config');
 const { router, createChatUser, setUserOffline, Message, tally, createDueRecurringEvents } = require('./routes');
 const { Settings, SVSHistory, User } = require('./models');
-const { errorHandler } = require('./middleware');
+const { errorHandler, requireJson, noCache } = require('./middleware');
 
 const cleanText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max ? value.trim().replace(/[<>]/g, '') : null;
 // express-mongo-sanitize's middleware assigns to req.query, which Express 5
@@ -111,9 +112,33 @@ async function connectDb() {
 }
 
 const app = express();
+// Trust the first proxy (Cloudflare / Nginx) so req.ip reflects the real client IP.
 app.set('trust proxy', 1);
 
-// Middleware to ensure DB connection
+// ─── Security Headers (Helmet) ───────────────────────────────────────────────
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com'],
+      connectSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  permissionsPolicy: { features: { camera: [], microphone: [], geolocation: [] } },
+}));
+
+// Remove X-Powered-By (Express sets it by default)
+app.disable('x-powered-by');
+
+// ─── DB Connection ────────────────────────────────────────────────────────────
 app.use(async (req, res, next) => {
   try {
     await connectDb();
@@ -123,15 +148,73 @@ app.use(async (req, res, next) => {
   }
 });
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// ─── Compression & CORS ───────────────────────────────────────────────────────
 app.use(compression());
-app.use(cors({ origin: clientOrigin.split(',').map((value)=>value.trim()), methods:['GET','POST','PATCH','PUT','DELETE'], allowedHeaders:['Content-Type','Authorization'], credentials: true }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(express.json({limit:'100kb'}));
+app.use(cors({
+  origin: clientOrigin.split(',').map((v) => v.trim()),
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400, // cache preflight for 24 h
+}));
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
+// In production hide query strings (may contain tokens) from logs
+const logFormat = process.env.NODE_ENV === 'production'
+  ? ':remote-addr - :method :url :status :res[content-length] - :response-time ms'
+  : 'dev';
+app.use(morgan(logFormat));
+
+// ─── Body Parsing ─────────────────────────────────────────────────────────────
+// Keep the global limit small; multer handles multipart separately
+app.use(express.json({ limit: '50kb' }));
+app.use(express.urlencoded({ extended: false, limit: '10kb' }));
+
+// ─── MongoDB Operator Injection Prevention ────────────────────────────────────
 app.use(rejectMongoOperators);
-app.use(rateLimit({ windowMs: 15*60*1000, limit: 300, standardHeaders:'draft-8', legacyHeaders:false }));
-app.get('/health',(_req,res)=>res.json({ok:true}));
-app.use('/api',router);
+
+// ─── Rate Limiters ────────────────────────────────────────────────────────────
+// 1. Global safety net — very generous, just blocks floods
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  limit: 500,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+});
+
+// 2. Public read-only endpoints (events, gallery, settings)
+const publicReadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 min
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+  skip: (req) => req.method !== 'GET',
+});
+
+// 3. Write / mutation endpoints
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 min
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
+  skip: (req) => req.method === 'GET',
+});
+
+// Apply global limiter to everything, then tiered limiters to /api
+app.use(globalLimiter);
+app.use('/api', publicReadLimiter);
+app.use('/api', writeLimiter);
+
+// ─── Health Check (no auth, no rate limit overhead) ───────────────────────────
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// ─── API Routes ───────────────────────────────────────────────────────────────
+// Apply requireJson + noCache to all API calls
+app.use('/api', requireJson, noCache, router);
+
 app.use(errorHandler);
 
 module.exports = app;
@@ -140,81 +223,105 @@ if (require.main === module) {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: clientOrigin.split(',').map((value)=>value.trim()),
-      methods: ['GET', 'POST']
+      origin: clientOrigin.split(',').map((v) => v.trim()),
+      methods: ['GET', 'POST'],
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    // Tighter timeouts to reclaim resources faster from dead connections
+    pingInterval: 25000,
+    pingTimeout: 10000,
+    connectTimeout: 8000,
+    maxHttpBufferSize: 64 * 1024, // 64 KB max per message payload
   });
+
   const online = new Map();
+
+  // Track connections per IP to prevent WebSocket flood (max 5 per IP)
+  const connectionsPerIp = new Map();
+  const MAX_CONNECTIONS_PER_IP = 5;
+
+  io.use((socket, next) => {
+    const ip = socket.handshake.headers['x-forwarded-for']?.split(',')[0].trim()
+      || socket.handshake.address;
+    const count = connectionsPerIp.get(ip) || 0;
+    if (count >= MAX_CONNECTIONS_PER_IP) {
+      return next(new Error('Too many connections from this IP'));
+    }
+    connectionsPerIp.set(ip, count + 1);
+    socket._clientIp = ip;
+    next();
+  });
 
   io.on('connection', (socket) => {
     let user;
     let lastMessageAt = 0;
     let messageTimestamps = [];
+
     socket.on('profile', async (profile, reply) => {
       try {
-        console.log('[Socket] Profile registration requested:', profile);
-        const gameName = cleanText(profile?.gameName, 40),
-              serverNumber = cleanText(profile?.serverNumber, 4),
-              allianceName = cleanText(profile?.allianceName, 3);
-        console.log('[Socket] Cleaned profile fields:', { gameName, serverNumber, allianceName });
-        
-        if (!gameName || !serverNumber || !allianceName) throw new Error('Invalid profile');
+        const gameName = cleanText(profile?.gameName, 40);
+        const serverNumber = cleanText(profile?.serverNumber, 4);
+        const allianceName = cleanText(profile?.allianceName, 3);
 
-        if (!/^\d{1,4}$/.test(serverNumber)) throw new Error('Server number must be a number with a maximum of 4 digits');
-        if (!/^[a-zA-Z]{3}$/.test(allianceName)) throw new Error('Alliance name must be exactly 3 letters');
+        if (!gameName || !serverNumber || !allianceName) throw new Error('Invalid profile');
+        if (!/^\d{1,4}$/.test(serverNumber)) throw new Error('Server number must be 1-4 digits');
+        if (!/^[a-zA-Z]{3}$/.test(allianceName)) throw new Error('Alliance name must be 3 letters');
 
         user = await createChatUser({ gameName, serverNumber, allianceName, socketId: socket.id });
-        console.log('[Socket] Registered user in DB:', user);
-        
         online.set(socket.id, user);
         io.emit('online-users', online.size);
         reply?.({ ok: true, user: { id: user.id, gameName, serverNumber, allianceName } });
       } catch (err) {
-        console.error('[Socket] Profile registration failed:', err);
         reply?.({ ok: false, error: err.message || 'Invalid profile' });
       }
     });
+
     socket.on('typing', (typing) => {
       if (user) socket.broadcast.emit('typing', { name: user.gameName, typing: Boolean(typing) });
     });
+
     socket.on('message', async (content, reply) => {
       try {
-        console.log('[Socket] Message received. Content:', content, 'Socket User:', user);
-        if (Date.now() - lastMessageAt < 2000) throw new Error('Please slow down');
         if (!user) throw new Error('Profile required');
+        if (Date.now() - lastMessageAt < 2000) throw new Error('Please slow down');
 
         const now = Date.now();
         messageTimestamps = messageTimestamps.filter((t) => now - t < 60 * 1000);
 
         const site = await Settings.findOne({ key: 'site' }).lean();
-        const limit = site?.chatMessagesLimitPerMin !== undefined ? site.chatMessagesLimitPerMin : 30;
+        const limit = site?.chatMessagesLimitPerMin ?? 30;
 
         if (messageTimestamps.length >= limit) {
-          throw new Error(`You have reached the limit of ${limit} messages per minute. Please wait before sending more.`);
+          throw new Error(`Limit of ${limit} messages per minute reached. Please wait.`);
         }
 
         const value = cleanText(content, 1000);
         if (!value) throw new Error('Invalid message');
-        
+
         lastMessageAt = now;
         messageTimestamps.push(now);
 
         const message = await Message.create({ userId: user._id, content: value });
         await tally('messages');
-        const payload = {
+        io.emit('message', {
           _id: message.id,
           content: value,
           createdAt: message.createdAt,
-          user: { gameName: user.gameName, serverNumber: user.serverNumber, allianceName: user.allianceName }
-        };
-        io.emit('message', payload);
+          user: { gameName: user.gameName, serverNumber: user.serverNumber, allianceName: user.allianceName },
+        });
         reply?.({ ok: true });
       } catch (error) {
         reply?.({ ok: false, error: error.message || 'Unable to send message' });
       }
     });
+
     socket.on('disconnect', async () => {
+      // Release the IP connection slot
+      if (socket._clientIp) {
+        const count = connectionsPerIp.get(socket._clientIp) || 1;
+        if (count <= 1) connectionsPerIp.delete(socket._clientIp);
+        else connectionsPerIp.set(socket._clientIp, count - 1);
+      }
       const connectedUser = online.get(socket.id);
       online.delete(socket.id);
       if (connectedUser?._id) {

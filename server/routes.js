@@ -1,7 +1,9 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const slowDown = require('express-slow-down');
 const { body, param, query } = require('express-validator');
 const cloudinary = require('cloudinary').v2;
 const nodemailer = require('nodemailer');
@@ -175,20 +177,42 @@ const mapTool = (tool, index) => ({
   enabled: tool.enabled !== undefined ? Boolean(tool.enabled) : true,
 });
 
+// ─── Timing-safe string comparison ───────────────────────────────────────────
+// Prevents timing attacks that could reveal whether username vs password failed.
+const safeEqual = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  // Pad to same length before compare so length doesn't leak info
+  const buf1 = Buffer.from(a.padEnd(256));
+  const buf2 = Buffer.from(b.padEnd(256));
+  return crypto.timingSafeEqual(buf1, buf2) && a.length === b.length;
+};
+
+// ─── Login Rate Limiter & Slow-down ──────────────────────────────────────────
+// Hard limit: 5 attempts per 15 min per IP
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 5, // Limit each IP to 5 requests per window
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
   message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  skipSuccessfulRequests: true, // only count failures toward the limit
+});
+
+// Progressive slow-down: after 2 failed attempts, add 500ms delay per attempt
+const loginSlowDown = slowDown({
+  windowMs: 15 * 60 * 1000,
+  delayAfter: 2,
+  delayMs: (hits) => (hits - 2) * 500,
+  maxDelayMs: 10000, // cap at 10 seconds
 });
 
 router.post(
   '/auth/login',
+  loginSlowDown,
   loginLimiter,
   [
-    body('username').isString().trim().isLength({ min: 3, max: 80 }),
-    body('password').isString().isLength({ min: 8, max: 200 }),
+    body('username').isString().trim().isLength({ min: 1, max: 80 }),
+    body('password').isString().isLength({ min: 1, max: 200 }),
   ],
   validate,
   asyncRoute(async (req, res) => {
@@ -196,21 +220,24 @@ router.post(
     const adminPassword = process.env.ADMIN_PASSWORD;
 
     if (!adminUsername || !adminPassword) {
-      return res.status(503).json({ error: 'Admin credentials are not configured.' });
+      return res.status(503).json({ error: 'Service temporarily unavailable.' });
     }
 
-    const submittedUsername = req.body.username.toLowerCase();
-    const expectedUsername = adminUsername.toLowerCase();
+    const usernameMatch = safeEqual(req.body.username.toLowerCase(), adminUsername.toLowerCase());
+    const passwordMatch = safeEqual(req.body.password, adminPassword);
 
-    if (submittedUsername !== expectedUsername || req.body.password !== adminPassword) {
+    // Always evaluate both comparisons (no short-circuit) to prevent timing attacks
+    if (!usernameMatch || !passwordMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const admin = { id: 'env-admin', username: adminUsername, role: 'admin' };
     res.json({
-      token: jwt.sign({ sub: admin.id, role: 'admin', username: admin.username }, jwtSecret, {
-        expiresIn: '8h',
-      }),
+      token: jwt.sign(
+        { sub: admin.id, role: 'admin', username: admin.username },
+        jwtSecret,
+        { algorithm: 'HS256', expiresIn: '8h' },
+      ),
       admin,
     });
   }),

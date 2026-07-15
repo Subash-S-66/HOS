@@ -19,6 +19,7 @@ import {
   X,
   AlertTriangle,
   Info,
+  Clock,
 } from "lucide-react";
 import * as FaIcons from "react-icons/fa6";
 import { motion, AnimatePresence } from "framer-motion";
@@ -129,6 +130,63 @@ function formatUtcToTimezone(utcDateString: string, timeZone: string): string {
   const hourStr = p.hour === "24" ? "00" : p.hour;
   return `${p.year}-${p.month}-${p.day}T${hourStr}:${p.minute}`;
 }
+
+const slotsConfig = [
+  { slot: 1, startHour: 3, startMin: 0, endHour: 5, endMin: 0, crossMidnight: false },
+  { slot: 2, startHour: 7, startMin: 0, endHour: 9, endMin: 0, crossMidnight: false },
+  { slot: 3, startHour: 9, startMin: 0, endHour: 11, endMin: 0, crossMidnight: false },
+  { slot: 4, startHour: 11, startMin: 0, endHour: 13, endMin: 0, crossMidnight: false },
+  { slot: 5, startHour: 13, startMin: 0, endHour: 15, endMin: 0, crossMidnight: false },
+  { slot: 6, startHour: 15, startMin: 0, endHour: 17, endMin: 0, crossMidnight: false },
+  { slot: 7, startHour: 17, startMin: 0, endHour: 19, endMin: 0, crossMidnight: false },
+  { slot: 8, startHour: 19, startMin: 0, endHour: 21, endMin: 0, crossMidnight: false },
+  { slot: 9, startHour: 21, startMin: 0, endHour: 23, endMin: 0, crossMidnight: false },
+  { slot: 10, startHour: 23, startMin: 0, endHour: 1, endMin: 0, crossMidnight: true }
+];
+
+const nextDayStr = (dateStr: string): string => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + 1));
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getSlotTimes = (baseDateStr: string, slotNum: number) => {
+  const config = slotsConfig[slotNum - 1];
+  const startStr = `${baseDateStr}T${String(config.startHour).padStart(2, "0")}:${String(config.startMin).padStart(2, "0")}`;
+  let endStr = "";
+  if (config.crossMidnight) {
+    const nextDay = nextDayStr(baseDateStr);
+    endStr = `${nextDay}T${String(config.endHour).padStart(2, "0")}:${String(config.endMin).padStart(2, "0")}`;
+  } else {
+    endStr = `${baseDateStr}T${String(config.endHour).padStart(2, "0")}:${String(config.endMin).padStart(2, "0")}`;
+  }
+  return {
+    startText: `${baseDateStr} ${String(config.startHour).padStart(2, "0")}:${String(config.startMin).padStart(2, "0")}:00`,
+    endText: `${config.crossMidnight ? nextDayStr(baseDateStr) : baseDateStr} ${String(config.endHour).padStart(2, "0")}:${String(config.endMin).padStart(2, "0")}:00`,
+    startDateLocal: startStr,
+    endDateLocal: endStr
+  };
+};
+
+const getTodayEstString = (): string => {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    const parts = formatter.formatToParts(new Date());
+    const p: Record<string, string> = {};
+    parts.forEach(part => p[part.type] = part.value);
+    return `${p.year}-${p.month}-${p.day}`;
+  } catch {
+    return new Date().toISOString().split("T")[0];
+  }
+};
 
 const sections: Array<{ name: SectionName; icon: any }> = [
   { name: "Dashboard", icon: LayoutDashboard },
@@ -421,7 +479,8 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [eventVotingEnabled, setEventVotingEnabled] = useState(false);
   const [eventRecurrenceDays, setEventRecurrenceDays] = useState<number | null>(null);
   const [eventVotingStartsBeforeDays, setEventVotingStartsBeforeDays] = useState(-1);
-  const [eventDurationMinutes, setEventDurationMinutes] = useState(60);
+  const [eventDurationMinutes, setEventDurationMinutes] = useState<string>("60");
+  const [savingEvent, setSavingEvent] = useState(false);
   const [eventColor, setEventColor] = useState("#00f3ff");
   const [eventRepeatEnabled, setEventRepeatEnabled] = useState(false);
   const [showRepeatConfigModal, setShowRepeatConfigModal] = useState(false);
@@ -440,6 +499,14 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [tempVotingEndsBeforeOption, setTempVotingEndsBeforeOption] = useState<string>("0");
   const [tempVotingEndsBeforeHours, setTempVotingEndsBeforeHours] = useState<number>(1);
   const [tempVotingEndsBeforeMins, setTempVotingEndsBeforeMins] = useState<number>(0);
+
+  // Battlefield Event states
+  const [activeEventTab, setActiveEventTab] = useState<"battlefield" | "regular">("battlefield");
+  const [battlefieldBaseDate, setBattlefieldBaseDate] = useState("");
+  const [selectedSlot, setSelectedSlot] = useState<number>(1);
+  const [bfRepeatEnabled, setBfRepeatEnabled] = useState(true);
+  const [bfRepeatOption, setBfRepeatOption] = useState<"7" | "custom">("7");
+  const [bfRepeatDays, setBfRepeatDays] = useState(7);
 
   // Tool creation modal states
   const [showToolModal, setShowToolModal] = useState(false);
@@ -527,38 +594,83 @@ export default function AdminDashboard({ username }: { username: string }) {
     setEventCreateDelayDays(0);
     setEventMaxParticipantsEnabled(false);
     setEventMaxParticipantsLimit(20);
-    setEventDurationMinutes(60);
+    setEventDurationMinutes("60");
     setEventColor(draft.primaryColor || "#00f3ff");
     setEventRepeatEnabled(false);
+    setActiveEventTab("battlefield");
+    setBattlefieldBaseDate(getTodayEstString());
+    setSelectedSlot(1);
+    setBfRepeatEnabled(true);
+    setBfRepeatOption("7");
+    setBfRepeatDays(7);
     setShowCreateModal(true);
   };
 
   const handleOpenEditModal = (event: AdminEvent) => {
     setEditingEventId(event._id);
-    setEventTitle(event.title);
     setEventDescription(event.description || "");
-    setEventDate(formatUtcToTimezone(event.date, "America/New_York"));
     setEventHidden(event.hidden || false);
-    setEventVotingEnabled(event.votingEnabled || false);
-    setEventRecurrenceDays(event.recurrenceDays || null);
-    setEventVotingStartsBeforeDays(event.votingStartsBeforeDays === undefined || event.votingStartsBeforeDays === null || event.votingStartsBeforeDays === 0 ? -1 : event.votingStartsBeforeDays);
-    setEventVotingEndsBeforeMinutes(event.votingEndsBeforeMinutes || 0);
-    setEventCreateDelayDays(event.createDelayDays || 0);
-    setEventMaxParticipantsEnabled(event.maxParticipants !== null && event.maxParticipants !== undefined && event.maxParticipants > 0);
-    setEventMaxParticipantsLimit(event.maxParticipants || 20);
-    if (event.createDelayDays && event.createDelayDays > 0) {
-      setTempCreateDelayOption("custom");
-      setTempCreateDelayDays(event.createDelayDays);
-    } else {
-      setTempCreateDelayOption("0");
-      setTempCreateDelayDays(2);
-    }
-    const duration = event.endsAt && event.startsAt
-      ? Math.max(1, Math.round((new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()) / 60_000))
-      : 60;
-    setEventDurationMinutes(duration);
     setEventColor(event.color || draft.primaryColor || "#00f3ff");
-    setEventRepeatEnabled(event.recurrenceDays !== null && event.recurrenceDays !== undefined && event.recurrenceDays > 0);
+
+    const battlefieldMatch = event.title.match(/\s*\(Slot (\d+)\)$/);
+    if (battlefieldMatch) {
+      const slotNum = Number(battlefieldMatch[1]);
+      setActiveEventTab("battlefield");
+      setEventTitle(event.title.replace(/\s*\(Slot \d+\)$/, ""));
+      setSelectedSlot(slotNum);
+      
+      const edtDateStr = formatUtcToTimezone(event.date, "America/New_York");
+      const baseDate = edtDateStr.split("T")[0];
+      setBattlefieldBaseDate(baseDate);
+      
+      const hasRepeat = event.recurrenceDays != null && event.recurrenceDays > 0;
+      setBfRepeatEnabled(hasRepeat);
+      if (hasRepeat) {
+        setBfRepeatDays(event.recurrenceDays ?? 7);
+        if (event.recurrenceDays === 7) {
+          setBfRepeatOption("7");
+        } else {
+          setBfRepeatOption("custom");
+        }
+      } else {
+        setBfRepeatOption("7");
+      }
+      
+      setEventDate(edtDateStr);
+      setEventVotingEnabled(true);
+      setEventVotingStartsBeforeDays(-1);
+      const config = slotsConfig[slotNum - 1];
+      setEventVotingEndsBeforeMinutes(config ? (config.startHour - 2) * 60 : 0);
+      setEventCreateDelayDays(event.createDelayDays || 0);
+      setEventMaxParticipantsEnabled(false);
+      setEventMaxParticipantsLimit(20);
+      setEventDurationMinutes("120");
+      setEventRecurrenceDays(event.recurrenceDays || null);
+      setEventRepeatEnabled(hasRepeat);
+    } else {
+      setActiveEventTab("regular");
+      setEventTitle(event.title);
+      setEventDate(formatUtcToTimezone(event.date, "America/New_York"));
+      setEventVotingEnabled(event.votingEnabled || false);
+      setEventRecurrenceDays(event.recurrenceDays || null);
+      setEventVotingStartsBeforeDays(event.votingStartsBeforeDays === undefined || event.votingStartsBeforeDays === null || event.votingStartsBeforeDays === 0 ? -1 : event.votingStartsBeforeDays);
+      setEventVotingEndsBeforeMinutes(event.votingEndsBeforeMinutes || 0);
+      setEventCreateDelayDays(event.createDelayDays || 0);
+      setEventMaxParticipantsEnabled(event.maxParticipants !== null && event.maxParticipants !== undefined && event.maxParticipants > 0);
+      setEventMaxParticipantsLimit(event.maxParticipants || 20);
+      if (event.createDelayDays && event.createDelayDays > 0) {
+        setTempCreateDelayOption("custom");
+        setTempCreateDelayDays(event.createDelayDays);
+      } else {
+        setTempCreateDelayOption("0");
+        setTempCreateDelayDays(2);
+      }
+      const duration = event.endsAt && event.startsAt
+        ? Math.max(1, Math.round((new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()) / 60_000))
+        : 60;
+      setEventDurationMinutes(String(duration));
+      setEventRepeatEnabled(event.recurrenceDays !== null && event.recurrenceDays !== undefined && event.recurrenceDays > 0);
+    }
     setShowCreateModal(true);
   };
 
@@ -584,26 +696,60 @@ export default function AdminDashboard({ username }: { username: string }) {
 
   const handleEventSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!eventTitle || !eventDate) {
+
+    let titleToSubmit = eventTitle;
+    let dateToSubmit = eventDate;
+    let durationToSubmit = Number(eventDurationMinutes);
+    let votingEnabledToSubmit = eventVotingEnabled;
+    let recurrenceDaysToSubmit = eventRecurrenceDays;
+    let votingStartsBeforeDaysToSubmit = eventVotingStartsBeforeDays;
+    let votingEndsBeforeMinutesToSubmit = eventVotingEndsBeforeMinutes;
+
+    if (activeEventTab === "battlefield") {
+      if (!eventTitle || !battlefieldBaseDate) {
+        setStatus("Please fill out Title and Base Date fields.");
+        return;
+      }
+      const config = slotsConfig[selectedSlot - 1];
+      const times = getSlotTimes(battlefieldBaseDate, selectedSlot);
+      titleToSubmit = `${eventTitle.trim()} (Slot ${selectedSlot})`;
+      dateToSubmit = times.startDateLocal;
+      durationToSubmit = 120;
+      votingEnabledToSubmit = true;
+      votingStartsBeforeDaysToSubmit = -1;
+      votingEndsBeforeMinutesToSubmit = (config.startHour - 2) * 60;
+      recurrenceDaysToSubmit = bfRepeatEnabled ? bfRepeatDays : null;
+    }
+
+    if (!titleToSubmit || !dateToSubmit) {
       setStatus("Please fill out Title and Date fields.");
       return;
     }
-    const year = eventDate.split("-")[0];
+    if (activeEventTab === "regular") {
+      const dur = Number(durationToSubmit);
+      if (!durationToSubmit || isNaN(dur) || dur < 1) {
+        setStatus("Please enter a valid duration (at least 1 minute).");
+        return;
+      }
+      durationToSubmit = dur;
+    }
+    const year = dateToSubmit.split("-")[0];
     if (year.length !== 4) {
       setStatus("Please enter a valid 4-digit year.");
       return;
     }
+    setSavingEvent(true);
     try {
       const payload = {
-        title: eventTitle,
+        title: titleToSubmit,
         description: eventDescription,
-        date: parseDateTimeInTimezone(eventDate, "America/New_York").toISOString(),
+        date: parseDateTimeInTimezone(dateToSubmit, "America/New_York").toISOString(),
         hidden: eventHidden,
-        durationMinutes: eventDurationMinutes,
-        votingEnabled: eventVotingEnabled,
-        recurrenceDays: eventRecurrenceDays,
-        votingStartsBeforeDays: eventVotingStartsBeforeDays,
-        votingEndsBeforeMinutes: eventVotingEndsBeforeMinutes,
+        durationMinutes: durationToSubmit,
+        votingEnabled: votingEnabledToSubmit,
+        recurrenceDays: recurrenceDaysToSubmit,
+        votingStartsBeforeDays: votingStartsBeforeDaysToSubmit,
+        votingEndsBeforeMinutes: votingEndsBeforeMinutesToSubmit,
         createDelayDays: eventCreateDelayDays,
         maxParticipants: eventMaxParticipantsEnabled ? eventMaxParticipantsLimit : null,
         color: eventColor,
@@ -636,12 +782,14 @@ export default function AdminDashboard({ username }: { username: string }) {
       setEventCreateDelayDays(0);
       setEventMaxParticipantsEnabled(false);
       setEventMaxParticipantsLimit(20);
-      setEventDurationMinutes(60);
+      setEventDurationMinutes("60");
       setEventColor(draft.primaryColor || "#00f3ff");
       setEventRepeatEnabled(false);
       setEditingEventId(null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save event.");
+    } finally {
+      setSavingEvent(false);
     }
   };
 
@@ -1727,309 +1875,515 @@ export default function AdminDashboard({ username }: { username: string }) {
                         <X size={16} />
                       </button>
                     </div>
-                    <form id="event-form" onSubmit={handleEventSubmit} className="mt-4 space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-                      <div>
-                        <Field label="Event Title" value={eventTitle} onChange={setEventTitle} />
-                      </div>
-                      <div>
-                        <label className="text-sm text-zinc-300">
-                          Event Description
-                          <textarea
-                            value={eventDescription}
-                            onChange={(e) => setEventDescription(e.target.value)}
-                            rows={3}
-                            className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
-                            placeholder="Provide details about the event..."
+
+                    <div className="flex border-b border-white/10 mt-3 mb-1">
+                      <button
+                        type="button"
+                        disabled={!!editingEventId}
+                        onClick={() => setActiveEventTab("battlefield")}
+                        className={`flex-1 pb-2.5 text-center text-sm font-semibold transition-colors duration-200 relative ${
+                          activeEventTab === "battlefield" ? "text-white" : "text-zinc-400 hover:text-zinc-200"
+                        } ${editingEventId ? "cursor-not-allowed opacity-70" : ""}`}
+                      >
+                        Battlefield Event
+                        {activeEventTab === "battlefield" && (
+                          <motion.div
+                            layoutId="event-tab-underline"
+                            className="absolute bottom-0 left-0 right-0 h-0.5"
+                            style={{ backgroundColor: draft.primaryColor }}
+                            transition={{ type: "spring", stiffness: 500, damping: 40 }}
                           />
-                        </label>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-zinc-300 block">
-                            Event Date & Time (EDT)
-                            <input
-                              type="datetime-local"
-                              value={eventDate}
-                              max="9999-12-31T23:59"
-                              onChange={(e) => setEventDate(e.target.value)}
-                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
-                              required
-                            />
-                          </label>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-300 block">
-                            Show as ongoing for (minutes)
-                            <input
-                              type="number"
-                              min={1}
-                              value={eventDurationMinutes}
-                              onChange={(e) => setEventDurationMinutes(Math.max(1, Number(e.target.value) || 60))}
-                              className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
-                              required
-                            />
-                          </label>
-                        </div>
-                      </div>
-                      <div className="text-[10px] text-zinc-400 space-y-0.5 leading-tight">
-                        <p>* Please schedule using Eastern Time (EST / EDT, GMT-4).</p>
-                        <p>* After it starts, this event stays visible until this duration has passed.</p>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                        <div>
-                          <label className="text-sm text-zinc-300 block">Event Theme Color</label>
-                          <div className="mt-1 flex items-center gap-2">
-                            <input
-                              type="color"
-                              value={eventColor}
-                              onChange={(e) => setEventColor(e.target.value)}
-                              className="h-9 w-12 rounded border border-white/10 bg-transparent cursor-pointer"
-                            />
-                            <input
-                              value={eventColor}
-                              onChange={(e) => setEventColor(e.target.value)}
-                              className="w-full rounded-lg border border-white/10 bg-black/35 px-2 py-2 text-xs text-zinc-300 outline-none"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/35 px-3 py-2 h-[38px]">
-                          <label htmlFor="event-hidden" className="text-xs font-semibold text-zinc-300 select-none">
-                            Hide this event
-                          </label>
-                          <button
-                            type="button"
-                            id="event-hidden"
-                            role="switch"
-                            aria-checked={eventHidden}
-                            onClick={() => setEventHidden(!eventHidden)}
-                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                              eventHidden ? 'bg-hos-red' : 'bg-white/15'
-                            }`}
-                          >
-                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
-                              eventHidden ? 'translate-x-4' : 'translate-x-0'
-                            }`} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-white/5 pt-3 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-zinc-300">Repeat event</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={eventRepeatEnabled}
-                              onClick={() => {
-                                if (eventRepeatEnabled) {
-                                  setEventRepeatEnabled(false);
-                                  setEventRecurrenceDays(null);
-                                } else {
-                                  setTempRecurrenceOption("7");
-                                  setTempRecurrenceDays(7);
-                                  if (eventCreateDelayDays && eventCreateDelayDays > 0) {
-                                    setTempCreateDelayOption("custom");
-                                    setTempCreateDelayDays(eventCreateDelayDays);
-                                  } else {
-                                    setTempCreateDelayOption("0");
-                                    setTempCreateDelayDays(2);
-                                  }
-                                  if (eventVotingStartsBeforeDays === -1) {
-                                    setTempVotingStartsBeforeOption("always");
-                                    setTempVotingStartsBeforeDays(1);
-                                  } else {
-                                    setTempVotingStartsBeforeOption("custom");
-                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
-                                  }
-                                  setShowRepeatConfigModal(true);
-                                }
-                              }}
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                                eventRepeatEnabled ? 'bg-hos-red' : 'bg-white/15'
-                              }`}
-                            >
-                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
-                                eventRepeatEnabled ? 'translate-x-4' : 'translate-x-0'
-                              }`} />
-                            </button>
-                          </div>
-                        </div>
-                        {eventRepeatEnabled && eventRecurrenceDays !== null && (
-                          <div className="space-y-0.5 pl-1 border-l border-white/10 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
-                            <p>• Repeats every <span className="text-zinc-200 font-semibold">{eventRecurrenceDays} day{eventRecurrenceDays > 1 ? "s" : ""}</span></p>
-                            <p>• Next occurrence: <span className="text-zinc-200 font-semibold">{eventCreateDelayDays === 0 ? "Instantly after old ends" : `${eventCreateDelayDays} day${eventCreateDelayDays > 1 ? "s" : ""} delay`}</span></p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (eventRecurrenceDays !== null) {
-                                  const isStandard = ["1", "3", "7", "14", "30"].includes(String(eventRecurrenceDays));
-                                  setTempRecurrenceOption(isStandard ? String(eventRecurrenceDays) : "custom");
-                                  setTempRecurrenceDays(eventRecurrenceDays);
-                                } else {
-                                  setTempRecurrenceOption("7");
-                                  setTempRecurrenceDays(7);
-                                }
-                                if (eventCreateDelayDays && eventCreateDelayDays > 0) {
-                                  setTempCreateDelayOption("custom");
-                                  setTempCreateDelayDays(eventCreateDelayDays);
-                                } else {
-                                  setTempCreateDelayOption("0");
-                                  setTempCreateDelayDays(2);
-                                }
-                                if (eventVotingStartsBeforeDays === -1) {
-                                  setTempVotingStartsBeforeOption("always");
-                                  setTempVotingStartsBeforeDays(1);
-                                } else {
-                                  setTempVotingStartsBeforeOption("custom");
-                                  setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
-                                }
-                                if (eventVotingEndsBeforeMinutes === 0) {
-                                  setTempVotingEndsBeforeOption("0");
-                                  setTempVotingEndsBeforeHours(1);
-                                  setTempVotingEndsBeforeMins(0);
-                                } else {
-                                  setTempVotingEndsBeforeOption("custom");
-                                  setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
-                                  setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
-                                }
-                                setShowRepeatConfigModal(true);
-                              }}
-                              className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline"
-                            >
-                              Edit Repeat Settings
-                            </button>
-                          </div>
                         )}
-                      </div>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!editingEventId}
+                        onClick={() => setActiveEventTab("regular")}
+                        className={`flex-1 pb-2.5 text-center text-sm font-semibold transition-colors duration-200 relative ${
+                          activeEventTab === "regular" ? "text-white" : "text-zinc-400 hover:text-zinc-200"
+                        } ${editingEventId ? "cursor-not-allowed opacity-70" : ""}`}
+                      >
+                        Regular Event
+                        {activeEventTab === "regular" && (
+                          <motion.div
+                            layoutId="event-tab-underline"
+                            className="absolute bottom-0 left-0 right-0 h-0.5"
+                            style={{ backgroundColor: draft.primaryColor }}
+                            transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                          />
+                        )}
+                      </button>
+                    </div>
 
-                      <div className="border-t border-white/5 my-2 pt-2 space-y-2">
-                        <div className="flex flex-col gap-1 py-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <label htmlFor="event-voting" className="text-xs font-semibold text-zinc-300 select-none">
-                              Enable participation voting
-                            </label>
-                            <button
-                              type="button"
-                              id="event-voting"
-                              role="switch"
-                              aria-checked={eventVotingEnabled}
-                              onClick={() => {
-                                const enabling = !eventVotingEnabled;
-                                setEventVotingEnabled(enabling);
-                                if (enabling) {
-                                  setIsNewVotingConfig(true);
-                                  if (eventVotingStartsBeforeDays === -1) {
-                                    setTempVotingStartsBeforeOption('always');
-                                    setTempVotingStartsBeforeDays(1);
-                                  } else {
-                                    setTempVotingStartsBeforeOption('custom');
-                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
-                                  }
-                                  if (eventVotingEndsBeforeMinutes === 0) {
-                                    setTempVotingEndsBeforeOption('0');
-                                    setTempVotingEndsBeforeHours(1);
-                                    setTempVotingEndsBeforeMins(0);
-                                  } else {
-                                    setTempVotingEndsBeforeOption('custom');
-                                    setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
-                                    setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
-                                  }
-                                  setShowVotingConfigModal(true);
-                                }
-                              }}
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                                eventVotingEnabled ? 'bg-hos-red' : 'bg-white/15'
-                              }`}
-                            >
-                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
-                                eventVotingEnabled ? 'translate-x-4' : 'translate-x-0'
-                              }`} />
-                            </button>
+                    <form id="event-form" onSubmit={handleEventSubmit} className="mt-4 max-h-[65vh] overflow-y-auto pr-1">
+                      <AnimatePresence mode="wait" initial={false}>
+                        {activeEventTab === "battlefield" ? (
+                          <motion.div
+                            key="battlefield"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            transition={{ duration: 0.16, ease: "easeOut" }}
+                            className="space-y-4"
+                          >
+                            <div>
+                              <Field label="Event Title" value={eventTitle} onChange={setEventTitle} placeholder="e.g. Battle of Gaugamela" />
                           </div>
-                          <p className="text-[10px] text-zinc-500">
-                            Members can join or leave and see the participant list.
-                          </p>
-                        </div>
+                          <div>
+                            <label className="text-sm text-zinc-300">
+                              Event Description
+                              <textarea
+                                value={eventDescription}
+                                onChange={(e) => setEventDescription(e.target.value)}
+                                rows={3}
+                                className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
+                                placeholder="Provide details about the event..."
+                              />
+                            </label>
+                          </div>
 
-                        {eventVotingEnabled && (
-                          <div className="pl-6 pt-1 space-y-2 animate-in slide-in-from-top-1 duration-200">
+                          <div>
+                            <label className="text-xs text-zinc-300 block mb-1">
+                              Base Date (EDT)
+                            </label>
+                            <input
+                              type="date"
+                              value={battlefieldBaseDate}
+                              onChange={(e) => setBattlefieldBaseDate(e.target.value)}
+                              className="w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs text-zinc-300 block">
+                              Select Time Slot (EDT)
+                            </label>
+                            <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1 border border-white/5 rounded-lg p-2 bg-black/15">
+                              {slotsConfig.map((config) => {
+                                const times = getSlotTimes(battlefieldBaseDate || getTodayEstString(), config.slot);
+                                const isSelected = selectedSlot === config.slot;
+                                return (
+                                  <button
+                                    key={config.slot}
+                                    type="button"
+                                    onClick={() => setSelectedSlot(config.slot)}
+                                    className={`flex items-center gap-3 w-full text-left rounded-lg border px-3 py-2 transition ${
+                                      isSelected
+                                        ? "border-white bg-white/10"
+                                        : "border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5"
+                                    }`}
+                                  >
+                                    <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
+                                      <div
+                                        className={`absolute rotate-45 w-4.5 h-4.5 border transition ${
+                                          isSelected ? "border-white bg-white/20" : "border-zinc-500 bg-transparent"
+                                        }`}
+                                      />
+                                      <span className={`z-10 text-[10px] font-bold ${isSelected ? "text-white" : "text-zinc-400"}`}>
+                                        {config.slot}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="text-[11px] font-mono tracking-tight text-zinc-300 flex-1">
+                                      {times.startText} <span className="text-zinc-500">~</span> {times.endText}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/5 pt-3 space-y-3">
                             <div className="flex items-center justify-between gap-2">
-                              <label htmlFor="event-max-voting" className="text-xs font-semibold text-zinc-300 select-none">
-                                Limit maximum participants
-                              </label>
+                              <span className="text-xs font-semibold text-zinc-300">Repeat event</span>
                               <button
                                 type="button"
-                                id="event-max-voting"
                                 role="switch"
-                                aria-checked={eventMaxParticipantsEnabled}
-                                onClick={() => setEventMaxParticipantsEnabled(!eventMaxParticipantsEnabled)}
+                                aria-checked={bfRepeatEnabled}
+                                onClick={() => setBfRepeatEnabled(!bfRepeatEnabled)}
                                 className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                                  eventMaxParticipantsEnabled ? 'bg-hos-red' : 'bg-white/15'
+                                  bfRepeatEnabled ? 'bg-hos-red' : 'bg-white/15'
                                 }`}
                               >
                                 <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
-                                  eventMaxParticipantsEnabled ? 'translate-x-4' : 'translate-x-0'
+                                  bfRepeatEnabled ? 'translate-x-4' : 'translate-x-0'
                                 }`} />
                               </button>
                             </div>
-                            {eventMaxParticipantsEnabled && (
-                              <div className="animate-in slide-in-from-top-1 duration-200 pl-6">
-                                <label className="text-[11px] text-zinc-400 block mb-1">
-                                  Maximum Limit:
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={eventMaxParticipantsLimit}
-                                  onChange={(e) => setEventMaxParticipantsLimit(Math.max(1, Number(e.target.value) || 20))}
-                                  className="w-24 rounded-lg border border-white/10 bg-black/35 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-hos-red"
-                                  required
-                                />
+
+                            {bfRepeatEnabled && (
+                              <div className="space-y-3 pl-3 border-l border-white/10 animate-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center gap-3">
+                                  <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                                    <input
+                                      type="radio"
+                                      name="bfRepeatType"
+                                      checked={bfRepeatOption === "7"}
+                                      onChange={() => {
+                                        setBfRepeatOption("7");
+                                        setBfRepeatDays(7);
+                                      }}
+                                      className="accent-hos-red"
+                                    />
+                                    Every 7 days
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                                    <input
+                                      type="radio"
+                                      name="bfRepeatType"
+                                      checked={bfRepeatOption === "custom"}
+                                      onChange={() => setBfRepeatOption("custom")}
+                                      className="accent-hos-red"
+                                    />
+                                    Custom
+                                  </label>
+                                </div>
+
+                                {bfRepeatOption === "custom" && (
+                                  <div className="flex items-center gap-2 animate-in slide-in-from-top-1 duration-200">
+                                    <span className="text-xs text-zinc-400">Repeat every</span>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={365}
+                                      value={bfRepeatDays}
+                                      onChange={(e) => setBfRepeatDays(Math.max(1, Math.min(365, Number(e.target.value) || 7)))}
+                                      className="w-16 rounded-lg border border-white/10 bg-black/35 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                                    />
+                                    <span className="text-xs text-zinc-400">days</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
-                        )}
 
-                        {eventVotingEnabled && (
-                          <div className="pl-6 pt-1 flex flex-col gap-0.5 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span>
-                                • Starts: <span className="text-zinc-200 font-semibold">{eventVotingStartsBeforeDays === -1 ? "Always open" : `${eventVotingStartsBeforeDays} day${eventVotingStartsBeforeDays > 1 ? "s" : ""} before`}</span>
-                              </span>
-                              <span>
-                                • Closes: <span className="text-zinc-200 font-semibold">{eventVotingEndsBeforeMinutes === 0 ? "At event start" : `${Math.floor(eventVotingEndsBeforeMinutes / 60)}h ${eventVotingEndsBeforeMinutes % 60}m before`}</span>
-                              </span>
+                          <div className="glass-panel p-3 rounded-xl border border-white/10 bg-white/5 flex items-start gap-2.5">
+                            <Info size={16} className="text-zinc-400 mt-0.5 shrink-0" />
+                            <div className="text-[11px] text-zinc-400 leading-normal">
+                              <p className="font-semibold text-zinc-300">Participation & Voting Settings:</p>
+                              <ul className="list-disc list-inside mt-0.5 space-y-0.5 pl-0.5">
+                                <li>Voting starts immediately when event is created.</li>
+                                <li>Voting closes at <span className="text-zinc-200 font-semibold">02:00 AM EDT</span>before event starts.</li>
+                                <li>Event duration is set to <span className="text-zinc-200 font-semibold">2 hours</span>.</li>
+                              </ul>
+                            </div>
+                          </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="regular"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.16, ease: "easeOut" }}
+                            className="space-y-4"
+                          >
+                            <div>
+                              <Field label="Event Title" value={eventTitle} onChange={setEventTitle} />
+                          </div>
+                          <div>
+                            <label className="text-sm text-zinc-300">
+                              Event Description
+                              <textarea
+                                value={eventDescription}
+                                onChange={(e) => setEventDescription(e.target.value)}
+                                rows={3}
+                                className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-200 outline-none transition focus:border-hos-red"
+                                placeholder="Provide details about the event..."
+                              />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs text-zinc-300 block">
+                                Event Date & Time (EDT)
+                                <input
+                                  type="datetime-local"
+                                  value={eventDate}
+                                  max="9999-12-31T23:59"
+                                  onChange={(e) => setEventDate(e.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
+                                  required
+                                />
+                              </label>
+                            </div>
+                            <div>
+                              <label className="text-xs text-zinc-300 block">
+                                Show as ongoing for (minutes)
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={eventDurationMinutes}
+                                  onChange={(e) => setEventDurationMinutes(e.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/35 px-2 py-1.5 text-xs text-zinc-200 outline-none transition focus:border-hos-red"
+                                  required
+                                />
+                              </label>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-zinc-400 space-y-0.5 leading-tight">
+                            <p>* Please schedule using Eastern Time (EST / EDT, GMT-4).</p>
+                            <p>* After it starts, this event stays visible until this duration has passed.</p>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                            <div>
+                              <label className="text-sm text-zinc-300 block">Event Theme Color</label>
+                              <div className="mt-1 flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={eventColor}
+                                  onChange={(e) => setEventColor(e.target.value)}
+                                  className="h-9 w-12 rounded border border-white/10 bg-transparent cursor-pointer"
+                                />
+                                <input
+                                  value={eventColor}
+                                  onChange={(e) => setEventColor(e.target.value)}
+                                  className="w-full rounded-lg border border-white/10 bg-black/35 px-2 py-2 text-xs text-zinc-300 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/35 px-3 py-2 h-[38px]">
+                              <label htmlFor="event-hidden" className="text-xs font-semibold text-zinc-300 select-none">
+                                Hide this event
+                              </label>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setIsNewVotingConfig(false);
-                                  if (eventVotingStartsBeforeDays === -1) {
-                                    setTempVotingStartsBeforeOption("always");
-                                    setTempVotingStartsBeforeDays(1);
-                                  } else {
-                                    setTempVotingStartsBeforeOption("custom");
-                                    setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
-                                  }
-                                  if (eventVotingEndsBeforeMinutes === 0) {
-                                    setTempVotingEndsBeforeOption("0");
-                                    setTempVotingEndsBeforeHours(1);
-                                    setTempVotingEndsBeforeMins(0);
-                                  } else {
-                                    setTempVotingEndsBeforeOption("custom");
-                                    setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
-                                    setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
-                                  }
-                                  setShowVotingConfigModal(true);
-                                }}
-                                className="text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline ml-1"
+                                id="event-hidden"
+                                role="switch"
+                                aria-checked={eventHidden}
+                                onClick={() => setEventHidden(!eventHidden)}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                  eventHidden ? 'bg-hos-red' : 'bg-white/15'
+                                }`}
                               >
-                                Edit
+                                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                  eventHidden ? 'translate-x-4' : 'translate-x-0'
+                                }`} />
                               </button>
                             </div>
                           </div>
+
+                          <div className="border-t border-white/5 pt-3 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-zinc-300">Repeat event</span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={eventRepeatEnabled}
+                                  onClick={() => {
+                                    if (eventRepeatEnabled) {
+                                      setEventRepeatEnabled(false);
+                                      setEventRecurrenceDays(null);
+                                    } else {
+                                      setTempRecurrenceOption("7");
+                                      setTempRecurrenceDays(7);
+                                      if (eventCreateDelayDays && eventCreateDelayDays > 0) {
+                                        setTempCreateDelayOption("custom");
+                                        setTempCreateDelayDays(eventCreateDelayDays);
+                                      } else {
+                                        setTempCreateDelayOption("0");
+                                        setTempCreateDelayDays(2);
+                                      }
+                                      if (eventVotingStartsBeforeDays === -1) {
+                                        setTempVotingStartsBeforeOption("always");
+                                        setTempVotingStartsBeforeDays(1);
+                                      } else {
+                                        setTempVotingStartsBeforeOption("custom");
+                                        setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                      }
+                                      setShowRepeatConfigModal(true);
+                                    }
+                                  }}
+                                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                    eventRepeatEnabled ? 'bg-hos-red' : 'bg-white/15'
+                                  }`}
+                                >
+                                  <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                    eventRepeatEnabled ? 'translate-x-4' : 'translate-x-0'
+                                  }`} />
+                                </button>
+                              </div>
+                            </div>
+                            {eventRepeatEnabled && eventRecurrenceDays !== null && (
+                              <div className="space-y-0.5 pl-1 border-l border-white/10 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
+                                <p>• Repeats every <span className="text-zinc-200 font-semibold">{eventRecurrenceDays} day{eventRecurrenceDays > 1 ? "s" : ""}</span></p>
+                                <p>• Next occurrence: <span className="text-zinc-200 font-semibold">{eventCreateDelayDays === 0 ? "Instantly after old ends" : `${eventCreateDelayDays} day${eventCreateDelayDays > 1 ? "s" : ""} delay`}</span></p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (eventRecurrenceDays !== null) {
+                                      const isStandard = ["1", "3", "7", "14", "30"].includes(String(eventRecurrenceDays));
+                                      setTempRecurrenceOption(isStandard ? String(eventRecurrenceDays) : "custom");
+                                      setTempRecurrenceDays(eventRecurrenceDays);
+                                    } else {
+                                      setTempRecurrenceOption("7");
+                                      setTempRecurrenceDays(7);
+                                    }
+                                    if (eventCreateDelayDays && eventCreateDelayDays > 0) {
+                                      setTempCreateDelayOption("custom");
+                                      setTempCreateDelayDays(eventCreateDelayDays);
+                                    } else {
+                                      setTempCreateDelayOption("0");
+                                      setTempCreateDelayDays(2);
+                                    }
+                                    if (eventVotingStartsBeforeDays === -1) {
+                                      setTempVotingStartsBeforeOption("always");
+                                      setTempVotingStartsBeforeDays(1);
+                                    } else {
+                                      setTempVotingStartsBeforeOption("custom");
+                                      setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                    }
+                                    if (eventVotingEndsBeforeMinutes === 0) {
+                                      setTempVotingEndsBeforeOption("0");
+                                      setTempVotingEndsBeforeHours(1);
+                                      setTempVotingEndsBeforeMins(0);
+                                    } else {
+                                      setTempVotingEndsBeforeOption("custom");
+                                      setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                      setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                    }
+                                    setShowRepeatConfigModal(true);
+                                  }}
+                                  className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline"
+                                >
+                                  Edit Repeat Settings
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-t border-white/5 my-2 pt-2 space-y-2">
+                            <div className="flex flex-col gap-1 py-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label htmlFor="event-voting" className="text-xs font-semibold text-zinc-300 select-none">
+                                  Enable participation voting
+                                </label>
+                                <button
+                                  type="button"
+                                  id="event-voting"
+                                  role="switch"
+                                  aria-checked={eventVotingEnabled}
+                                  onClick={() => {
+                                    const enabling = !eventVotingEnabled;
+                                    setEventVotingEnabled(enabling);
+                                    if (enabling) {
+                                      setIsNewVotingConfig(true);
+                                      if (eventVotingStartsBeforeDays === -1) {
+                                        setTempVotingStartsBeforeOption('always');
+                                        setTempVotingStartsBeforeDays(1);
+                                      } else {
+                                        setTempVotingStartsBeforeOption('custom');
+                                        setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                      }
+                                      if (eventVotingEndsBeforeMinutes === 0) {
+                                        setTempVotingEndsBeforeOption('0');
+                                        setTempVotingEndsBeforeHours(1);
+                                        setTempVotingEndsBeforeMins(0);
+                                      } else {
+                                        setTempVotingEndsBeforeOption('custom');
+                                        setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                        setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                      }
+                                      setShowVotingConfigModal(true);
+                                    }
+                                  }}
+                                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                    eventVotingEnabled ? 'bg-hos-red' : 'bg-white/15'
+                                  }`}
+                                >
+                                  <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                    eventVotingEnabled ? 'translate-x-4' : 'translate-x-0'
+                                  }`} />
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-zinc-500">
+                                Members can join or leave and see the participant list.
+                              </p>
+                            </div>
+
+                            {eventVotingEnabled && (
+                              <div className="pl-6 pt-1 space-y-2 animate-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center justify-between gap-2">
+                                  <label htmlFor="event-max-voting" className="text-xs font-semibold text-zinc-300 select-none">
+                                    Limit maximum participants
+                                  </label>
+                                  <button
+                                    type="button"
+                                    id="event-max-voting"
+                                    role="switch"
+                                    aria-checked={eventMaxParticipantsEnabled}
+                                    onClick={() => setEventMaxParticipantsEnabled(!eventMaxParticipantsEnabled)}
+                                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                                      eventMaxParticipantsEnabled ? 'bg-hos-red' : 'bg-white/15'
+                                    }`}
+                                  >
+                                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                      eventMaxParticipantsEnabled ? 'translate-x-4' : 'translate-x-0'
+                                    }`} />
+                                  </button>
+                                </div>
+                                {eventMaxParticipantsEnabled && (
+                                  <div className="animate-in slide-in-from-top-1 duration-200 pl-6">
+                                    <label className="text-[11px] text-zinc-400 block mb-1">
+                                      Maximum Limit:
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={eventMaxParticipantsLimit}
+                                      onChange={(e) => setEventMaxParticipantsLimit(Math.max(1, Number(e.target.value) || 20))}
+                                      className="w-24 rounded-lg border border-white/10 bg-black/35 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-hos-red"
+                                      required
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {eventVotingEnabled && (
+                              <div className="pl-6 pt-1 flex flex-col gap-0.5 animate-in slide-in-from-top-1 duration-200 text-[10px] text-zinc-400">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span>
+                                    • Starts: <span className="text-zinc-200 font-semibold">{eventVotingStartsBeforeDays === -1 ? "Always open" : `${eventVotingStartsBeforeDays} day${eventVotingStartsBeforeDays > 1 ? "s" : ""} before`}</span>
+                                  </span>
+                                  <span>
+                                    • Closes: <span className="text-zinc-200 font-semibold">{eventVotingEndsBeforeMinutes === 0 ? "At event start" : `${Math.floor(eventVotingEndsBeforeMinutes / 60)}h ${eventVotingEndsBeforeMinutes % 60}m before`}</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsNewVotingConfig(false);
+                                      if (eventVotingStartsBeforeDays === -1) {
+                                        setTempVotingStartsBeforeOption("always");
+                                        setTempVotingStartsBeforeDays(1);
+                                      } else {
+                                        setTempVotingStartsBeforeOption("custom");
+                                        setTempVotingStartsBeforeDays(eventVotingStartsBeforeDays || 1);
+                                      }
+                                      if (eventVotingEndsBeforeMinutes === 0) {
+                                        setTempVotingEndsBeforeOption("0");
+                                        setTempVotingEndsBeforeHours(1);
+                                        setTempVotingEndsBeforeMins(0);
+                                      } else {
+                                        setTempVotingEndsBeforeOption("custom");
+                                        setTempVotingEndsBeforeHours(Math.floor(eventVotingEndsBeforeMinutes / 60));
+                                        setTempVotingEndsBeforeMins(eventVotingEndsBeforeMinutes % 60);
+                                      }
+                                      setShowVotingConfigModal(true);
+                                    }}
+                                    className="text-[10px] font-bold uppercase tracking-wider text-hos-red hover:underline ml-1"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          </motion.div>
                         )}
-                      </div>
+                      </AnimatePresence>
 
 
                     </form>
@@ -2037,17 +2391,28 @@ export default function AdminDashboard({ username }: { username: string }) {
                       <button
                         type="button"
                         onClick={() => setShowCreateModal(false)}
-                        className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5"
+                        disabled={savingEvent}
+                        className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5 disabled:opacity-50"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
                         form="event-form"
+                        disabled={savingEvent}
                         style={{ backgroundColor: draft.primaryColor }}
-                        className="rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110"
+                        className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold text-white hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed transition"
                       >
-                        {editingEventId ? "Save Changes" : "Save Event"}
+                        {savingEvent && (
+                          <svg className="animate-spin h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                          </svg>
+                        )}
+                        {savingEvent
+                          ? (editingEventId ? "Saving..." : "Creating...")
+                          : (editingEventId ? "Save Changes" : "Create Event")
+                        }
                       </button>
                     </div>
                   </div>
