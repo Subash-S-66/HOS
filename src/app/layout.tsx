@@ -123,8 +123,7 @@ export const metadata: Metadata = {
   },
 
   verification: {
-    // Add your Google Search Console verification token here once you set it up:
-    // google: "YOUR_GOOGLE_VERIFICATION_TOKEN",
+    google: "googlefb28afcc616d4253",
   },
 };
 
