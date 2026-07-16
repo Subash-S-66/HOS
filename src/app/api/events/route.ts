@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       title,
       description,
       date: start,
+      startsAt: start,
       endsAt: new Date(start.getTime() + duration * 60_000),
       hidden,
       votingEnabled: Boolean(votingEnabled),

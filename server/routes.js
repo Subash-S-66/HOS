@@ -660,6 +660,7 @@ router.post(
       title: req.body.title,
       description: req.body.description,
       startsAt: startDate,
+      date: startDate,
       endsAt: new Date(startDate.getTime() + durationMinutes * 60_000),
       hidden: Boolean(req.body.hidden),
       votingEnabled: Boolean(req.body.votingEnabled),
@@ -718,9 +719,9 @@ router.patch(
         return res.status(422).json({ error: 'maxParticipants must be a positive integer.' });
       }
     }
-    delete patch.date;
     delete patch.durationMinutes;
     patch.startsAt = startDate;
+    patch.date = startDate;
     patch.endsAt = new Date(startDate.getTime() + durationMinutes * 60_000);
     const item = await Event.findByIdAndUpdate(req.params.id, { $set: patch }, { returnDocument: 'after', runValidators: true });
     res.json(publicEvent(item));

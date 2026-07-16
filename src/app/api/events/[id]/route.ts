@@ -38,6 +38,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/events/[id
         title,
         description,
         date: start,
+        startsAt: start,
         endsAt: new Date(start.getTime() + duration * 60_000),
         hidden,
         votingEnabled: Boolean(votingEnabled),

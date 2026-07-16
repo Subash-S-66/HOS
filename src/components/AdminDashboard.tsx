@@ -188,6 +188,51 @@ const getTodayEstString = (): string => {
   }
 };
 
+const getNextWednesdayOrSaturdayEstString = (): string => {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    const parts = formatter.formatToParts(new Date());
+    const p: Record<string, string> = {};
+    parts.forEach(part => p[part.type] = part.value);
+    
+    const year = Number(p.year);
+    const month = Number(p.month);
+    const day = Number(p.day);
+    
+    const nyDate = new Date(Date.UTC(year, month - 1, day));
+    
+    for (let i = 0; i < 8; i++) {
+      const checkDate = new Date(nyDate.getTime() + i * 24 * 60 * 60 * 1000);
+      const dayOfWeek = checkDate.getUTCDay();
+      if (dayOfWeek === 3 || dayOfWeek === 6) {
+        const y = checkDate.getUTCFullYear();
+        const m = String(checkDate.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(checkDate.getUTCDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+    }
+    return `${p.year}-${p.month}-${p.day}`;
+  } catch {
+    const now = new Date();
+    for (let i = 0; i < 8; i++) {
+      const checkDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+      const dayOfWeek = checkDate.getDay();
+      if (dayOfWeek === 3 || dayOfWeek === 6) {
+        const y = checkDate.getFullYear();
+        const m = String(checkDate.getMonth() + 1).padStart(2, "0");
+        const d = String(checkDate.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+    }
+    return now.toISOString().split("T")[0];
+  }
+};
+
 const sections: Array<{ name: SectionName; icon: any }> = [
   { name: "Dashboard", icon: LayoutDashboard },
   { name: "Website Settings", icon: Settings },
@@ -206,14 +251,29 @@ const toolIconOptions = [
   "FaWrench",
   "FaShieldHalved",
   "FaUsers",
+  "FaUsersGear",
+  "FaPeopleGroup",
   "FaCalendarDays",
   "FaBolt",
   "FaFire",
   "FaCompass",
   "FaScrewdriverWrench",
   "FaHammer",
-  "FaSword",
+  "FaSwords",
+  "FaHelmetBattle",
+  "FaCrosshairs",
+  "FaSkullCrossbones",
+  "FaSkull",
+  "FaBomb",
+  "FaExplosion",
+  "FaChessKnight",
+  "FaChessRook",
+  "FaChessKing",
+  "FaChessQueen",
+  "FaChess",
   "FaTrophy",
+  "FaCrown",
+  "FaMedal",
   "FaChartLine",
   "FaMap",
   "FaGlobe",
@@ -222,15 +282,16 @@ const toolIconOptions = [
   "FaClipboardList",
   "FaRankingStar",
   "FaFlag",
+  "FaFlagCheckered",
   "FaStar",
   "FaBell",
   "FaRocket",
   "FaLink",
   "FaClock",
   "FaGem",
-  "FaSkullCrossbones",
-  "FaCrown",
   "FaTowerBroadcast",
+  "FaHandshake",
+  "FaBullhorn",
 ] as const;
 
 const input =
@@ -466,6 +527,8 @@ export default function AdminDashboard({ username }: { username: string }) {
   const [editingToolIds, setEditingToolIds] = useState<string[]>([]);
   const [svsEditMode, setSvsEditMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [successAnimation, setSuccessAnimation] = useState<{ type: "create" | "update" | "delete"; title: string } | null>(null);
+  const [iconPickerTarget, setIconPickerTarget] = useState<{ type: "create" | "edit"; id?: string } | null>(null);
 
   // Event states
   const [events, setEvents] = useState<Array<AdminEvent>>([]);
@@ -562,6 +625,8 @@ export default function AdminDashboard({ username }: { username: string }) {
       }));
       updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
       setShowToolModal(false);
+      setSuccessAnimation({ type: "create", title: "Tool Created!" });
+      setTimeout(() => setSuccessAnimation(null), 1200);
       setStatus(`Created and saved tool "${toolTitle.trim()}" successfully.`);
       await refreshConfig();
     } catch (error) {
@@ -573,7 +638,8 @@ export default function AdminDashboard({ username }: { username: string }) {
     setLoadingEvents(true);
     try {
       const data = await api<Array<AdminEvent>>("/events");
-      setEvents(data);
+      const sorted = [...data].sort((a, b) => b._id.localeCompare(a._id));
+      setEvents(sorted);
     } catch {
       setStatus("Could not load events list.");
     } finally {
@@ -598,7 +664,7 @@ export default function AdminDashboard({ username }: { username: string }) {
     setEventColor(draft.primaryColor || "#00f3ff");
     setEventRepeatEnabled(false);
     setActiveEventTab("battlefield");
-    setBattlefieldBaseDate(getTodayEstString());
+    setBattlefieldBaseDate(getNextWednesdayOrSaturdayEstString());
     setSelectedSlot(1);
     setBfRepeatEnabled(true);
     setBfRepeatOption("7");
@@ -685,6 +751,8 @@ export default function AdminDashboard({ username }: { username: string }) {
           await api(`/events/${id}`, {
             method: "DELETE",
           });
+           setSuccessAnimation({ type: "delete", title: "Event Deleted!" });
+          setTimeout(() => setSuccessAnimation(null), 1200);
           setStatus("Event deleted successfully.");
           void loadEvents();
         } catch (error) {
@@ -760,12 +828,16 @@ export default function AdminDashboard({ username }: { username: string }) {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
+        setSuccessAnimation({ type: "update", title: "Event Saved!" });
+        setTimeout(() => setSuccessAnimation(null), 1200);
         setStatus("Event updated successfully.");
       } else {
         await api("/events", {
           method: "POST",
           body: JSON.stringify(payload),
         });
+        setSuccessAnimation({ type: "create", title: "Event Created!" });
+        setTimeout(() => setSuccessAnimation(null), 1200);
         setStatus("Event created successfully.");
       }
 
@@ -865,6 +937,8 @@ export default function AdminDashboard({ username }: { username: string }) {
             updateConfig(mergeSiteConfig(config, payload));
           }
 
+           setSuccessAnimation({ type: "update", title: `${section} Saved!` });
+          setTimeout(() => setSuccessAnimation(null), 1200);
           setStatus(`Saved ${section} changes to database.`);
           await refreshConfig();
           if (section === "SVS History") {
@@ -959,6 +1033,8 @@ export default function AdminDashboard({ username }: { username: string }) {
           }));
           setEditingToolIds((prev) => prev.filter((item) => item !== id));
           updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
+           setSuccessAnimation({ type: "delete", title: "Tool Deleted!" });
+          setTimeout(() => setSuccessAnimation(null), 1200);
           setStatus(`Deleted and saved tool "${toolTitle}" successfully.`);
           await refreshConfig();
         } catch (error) {
@@ -992,6 +1068,8 @@ export default function AdminDashboard({ username }: { username: string }) {
         body: JSON.stringify({ tools: updatedTools }),
       });
       updateConfig(mergeSiteConfig(config, { tools: updatedTools }));
+       setSuccessAnimation({ type: "update", title: "Tool Saved!" });
+      setTimeout(() => setSuccessAnimation(null), 1200);
       setStatus(`Saved changes to "${toolToSave.title}" successfully.`);
       setEditingToolIds((prev) => prev.filter((id) => id !== toolToSave.id));
       await refreshConfig();
@@ -1001,19 +1079,44 @@ export default function AdminDashboard({ username }: { username: string }) {
   };
 
   const moveTool = (id: string, direction: "up" | "down") => {
-    setDraft((current) => {
-      const sorted = [...current.tools].sort((a, b) => a.order - b.order);
-      const index = sorted.findIndex((tool) => tool.id === id);
-      if (index === -1) return current;
+    const tool = draft.tools.find((t) => t.id === id);
+    const toolTitle = tool ? tool.title : "this tool";
 
-      const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= sorted.length) return current;
+    showConfirm({
+      title: `Move Tool ${direction === "up" ? "Up" : "Down"}`,
+      message: `Are you sure you want to move "${toolTitle}" ${direction}?`,
+      confirmLabel: "Move",
+      onConfirm: async () => {
+        const sorted = [...draft.tools].sort((a, b) => a.order - b.order);
+        const index = sorted.findIndex((t) => t.id === id);
+        if (index === -1) return;
 
-      const swapped = [...sorted];
-      [swapped[index], swapped[targetIndex]] = [swapped[targetIndex], swapped[index]];
+        const targetIndex = direction === "up" ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= sorted.length) return;
 
-      const normalized = swapped.map((tool, orderIndex) => ({ ...tool, order: orderIndex + 1 }));
-      return { ...current, tools: normalized };
+        const swapped = [...sorted];
+        [swapped[index], swapped[targetIndex]] = [swapped[targetIndex], swapped[index]];
+
+        const normalized = swapped.map((t, orderIndex) => ({ ...t, order: orderIndex + 1 }));
+
+        try {
+          await api<{ ok: boolean }>("/admin/config", {
+            method: "PUT",
+            body: JSON.stringify({ tools: normalized }),
+          });
+          setDraft((current) => ({
+            ...current,
+            tools: normalized,
+          }));
+          updateConfig(mergeSiteConfig(config, { tools: normalized }));
+          setSuccessAnimation({ type: "update", title: "Order Updated!" });
+          setTimeout(() => setSuccessAnimation(null), 1200);
+          setStatus(`Moved tool "${toolTitle}" ${direction} successfully.`);
+          await refreshConfig();
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Failed to move tool.");
+        }
+      },
     });
   };
 
@@ -1124,9 +1227,19 @@ export default function AdminDashboard({ username }: { username: string }) {
             <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">{active}</p>
           </div>
 
-          {status ? (
-            <div className="glass-panel mb-3 rounded-xl px-4 py-2 text-xs text-zinc-300">{status}</div>
-          ) : null}
+          <AnimatePresence>
+            {status ? (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="glass-panel mb-3 rounded-xl px-4 py-2 text-xs text-zinc-300"
+              >
+                {status}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           {active === "Dashboard" && (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -1274,7 +1387,7 @@ export default function AdminDashboard({ username }: { username: string }) {
           )}
 
           {active === "Tools" && (
-            <div className="space-y-4">
+            <motion.div layout className="space-y-4">
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setToolsEditMode((current) => !current)}
@@ -1300,16 +1413,25 @@ export default function AdminDashboard({ username }: { username: string }) {
                 </button>
               </div>
 
-              {[...draft.tools]
-                .sort((a, b) => a.order - b.order)
-                .map((tool) => {
-                  const Icon = FaIcons[tool.icon as keyof typeof FaIcons] as
-                    | React.ComponentType<{ className?: string }>
-                    | undefined;
-                  const isEditable = toolsEditMode || editingToolIds.includes(tool.id);
+              <AnimatePresence mode="popLayout">
+                {[...draft.tools]
+                  .sort((a, b) => a.order - b.order)
+                  .map((tool) => {
+                    const Icon = FaIcons[tool.icon as keyof typeof FaIcons] as
+                      | React.ComponentType<{ className?: string }>
+                      | undefined;
+                    const isEditable = toolsEditMode || editingToolIds.includes(tool.id);
 
-                  return (
-                    <div key={tool.id} className="glass-panel rounded-xl p-4">
+                    return (
+                      <motion.div
+                        key={tool.id}
+                        layout
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -15 }}
+                        transition={{ duration: 0.25 }}
+                        className="glass-panel rounded-xl p-4"
+                      >
                       <div className="grid gap-3 md:grid-cols-[1.2fr_1.6fr_1.2fr_130px_auto]">
                         <div>
                           <input
@@ -1343,31 +1465,21 @@ export default function AdminDashboard({ username }: { username: string }) {
                             className="w-full rounded bg-black/25 px-2 py-1 text-xs text-zinc-300 outline-none"
                             placeholder="/tools or https://..."
                           />
-                          <div className="rounded-lg border border-white/10 bg-black/25 p-2">
-                            <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-400">Icon preview</p>
-                            <div className="mt-2 grid grid-cols-7 gap-1">
-                              {toolIconOptions.map((name) => {
-                                const Picker = FaIcons[name as keyof typeof FaIcons] as
-                                  | React.ComponentType<{ className?: string }>
-                                  | undefined;
-                                const selected = tool.icon === name;
-                                return (
-                                  <button
-                                    key={name}
-                                    onClick={() => alterTool(tool.id, { icon: name })}
-                                    disabled={!isEditable}
-                                    title={name}
-                                    className={`grid h-7 w-7 place-items-center rounded-md border text-xs transition ${
-                                      selected
-                                        ? "border-white/40 bg-white/10 text-white"
-                                        : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
-                                    }`}
-                                  >
-                                    {Picker ? <Picker className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
-                                  </button>
-                                );
-                              })}
+                          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 p-2 flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="grid h-7 w-7 place-items-center rounded bg-black/45" style={{ color: tool.color }}>
+                                {Icon ? <Icon className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+                              </div>
+                              <span className="text-[10px] font-mono text-zinc-300 truncate max-w-[80px]" title={tool.icon}>{tool.icon}</span>
                             </div>
+                            <button
+                              type="button"
+                              disabled={!isEditable}
+                              onClick={() => setIconPickerTarget({ type: "edit", id: tool.id })}
+                              className="rounded border border-white/10 px-2 py-1 text-[10px] font-bold text-zinc-300 transition hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Change Icon
+                            </button>
                           </div>
                         </div>
 
@@ -1447,37 +1559,49 @@ export default function AdminDashboard({ username }: { username: string }) {
                             <button
                               type="button"
                               onClick={() => moveTool(tool.id, "up")}
-                              disabled={!isEditable}
-                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={tool.order === 1}
+                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-30 disabled:cursor-not-allowed transition hover:bg-white/5"
                             >
                               Up
                             </button>
                             <button
                               type="button"
                               onClick={() => moveTool(tool.id, "down")}
-                              disabled={!isEditable}
-                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={tool.order === draft.tools.length}
+                              className="rounded border border-white/10 px-2 py-1 text-[11px] text-zinc-400 disabled:opacity-30 disabled:cursor-not-allowed transition hover:bg-white/5"
                             >
                               Down
                             </button>
                             <button
                               type="button"
                               onClick={() => removeTool(tool.id)}
-                              disabled={!isEditable}
-                              className="rounded border border-red-900/60 px-2 py-1 text-[11px] text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="rounded border border-red-900/60 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-950/20"
                             >
                               Delete
                             </button>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                      </motion.div>
+                    );
+                  })}
+              </AnimatePresence>
 
-              {showToolModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-                  <div className="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl">
+              <AnimatePresence>
+                {showToolModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                      transition={{ type: "spring", duration: 0.3 }}
+                      className="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl"
+                    >
                     <div className="flex items-center justify-between border-b border-white/10 pb-3">
                       <h3 className="text-lg font-bold text-white">Create New Tool</h3>
                       <button
@@ -1535,31 +1659,26 @@ export default function AdminDashboard({ username }: { username: string }) {
                           </div>
                         </label>
                       </div>
-                      <div>
-                        <label className="text-sm text-zinc-300">Choose Icon</label>
-                        <div className="mt-2 grid grid-cols-7 gap-1.5 rounded-lg border border-white/10 bg-black/25 p-2">
-                          {toolIconOptions.map((name) => {
-                            const Picker = FaIcons[name as keyof typeof FaIcons] as
-                              | React.ComponentType<{ className?: string }>
-                              | undefined;
-                            const selected = toolIcon === name;
-                            return (
-                              <button
-                                type="button"
-                                key={name}
-                                onClick={() => setToolIcon(name)}
-                                title={name}
-                                className={`grid h-8 w-8 place-items-center rounded-md border text-xs transition ${
-                                  selected
-                                    ? "border-white/40 bg-white/10 text-white"
-                                    : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-white"
-                                }`}
-                              >
-                                {Picker ? <Picker className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
-                              </button>
-                            );
-                          })}
+                      <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 p-3 mt-1">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xs font-semibold text-zinc-300">Selected Icon:</span>
+                          <div className="grid h-9 w-9 place-items-center rounded bg-black/45" style={{ color: toolColor }}>
+                            {(() => {
+                              const SelectedIcon = FaIcons[toolIcon as keyof typeof FaIcons] as
+                                | React.ComponentType<{ className?: string }>
+                                | undefined;
+                              return SelectedIcon ? <SelectedIcon className="h-5 w-5" /> : <Wrench className="h-5 w-5" />;
+                            })()}
+                          </div>
+                          <span className="text-xs font-mono text-zinc-200">{toolIcon}</span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setIconPickerTarget({ type: "create" })}
+                          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-zinc-300 transition hover:bg-white/5"
+                        >
+                          Change Icon
+                        </button>
                       </div>
                       <div className="flex items-center gap-2 py-1">
                         <input
@@ -1590,11 +1709,12 @@ export default function AdminDashboard({ username }: { username: string }) {
                         </button>
                       </div>
                     </form>
-                  </div>
-                </div>
-              )}
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-            </div>
+            </motion.div>
           )}
 
           {active === "Gallery" && (
@@ -1815,11 +1935,20 @@ export default function AdminDashboard({ username }: { username: string }) {
               {loadingEvents ? (
                 <p className="text-sm text-zinc-400">Loading events...</p>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {events.map((event) => {
-                    const eventDateObj = new Date(event.date);
-                    return (
-                      <div key={event._id} className="glass-panel flex flex-col justify-between rounded-2xl p-5">
+                <motion.div layout className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <AnimatePresence mode="popLayout">
+                    {events.map((event) => {
+                      const eventDateObj = new Date(event.date);
+                      return (
+                        <motion.div
+                          key={event._id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: -15 }}
+                          transition={{ duration: 0.25 }}
+                          className="glass-panel flex flex-col justify-between rounded-2xl p-5"
+                        >
                         <div>
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-hos-red">
@@ -1851,19 +1980,32 @@ export default function AdminDashboard({ username }: { username: string }) {
                             Delete
                           </button>
                         </div>
-                      </div>
-                    );
-                  })}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                   {!events.length && (
-                    <p className="col-span-full py-12 text-center text-sm text-zinc-350">No events scheduled yet.</p>
+                    <motion.p layout className="col-span-full py-12 text-center text-sm text-zinc-350">No events scheduled yet.</motion.p>
                   )}
-                </div>
+                </motion.div>
               )}
 
               {/* Modal overlay */}
-              {showCreateModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-                  <div className="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl">
+              <AnimatePresence>
+                {showCreateModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                      transition={{ type: "spring", duration: 0.3 }}
+                      className="glass-panel w-full max-w-md rounded-2xl p-6 shadow-2xl"
+                    >
                     <div className="flex items-center justify-between border-b border-white/10 pb-3">
                       <h3 className="text-lg font-bold text-white">
                         {editingEventId ? "Edit Event" : "Create New Event"}
@@ -2415,13 +2557,26 @@ export default function AdminDashboard({ username }: { username: string }) {
                         }
                       </button>
                     </div>
-                  </div>
-                </div>
+                  </motion.div>
+                </motion.div>
               )}
+            </AnimatePresence>
 
-              {showRepeatConfigModal && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
-                  <div className="glass-panel w-full max-w-sm rounded-xl p-5 shadow-2xl border border-zinc-800 space-y-4">
+              <AnimatePresence>
+                {showRepeatConfigModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md"
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                      transition={{ type: "spring", duration: 0.3 }}
+                      className="glass-panel w-full max-w-sm rounded-xl p-5 shadow-2xl border border-zinc-800 space-y-4"
+                    >
                     <div>
                       <h4 className="text-sm font-bold text-white uppercase tracking-wider">
                         Configure Repeat Settings
@@ -2538,13 +2693,26 @@ export default function AdminDashboard({ username }: { username: string }) {
                         Apply Settings
                       </button>
                     </div>
-                  </div>
-                </div>
-              )}
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              {showVotingConfigModal && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm">
-                  <div className="glass-panel w-full max-w-sm rounded-2xl p-5">
+              <AnimatePresence>
+                {showVotingConfigModal && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                      transition={{ type: "spring", duration: 0.3 }}
+                      className="glass-panel w-full max-w-sm rounded-2xl p-5"
+                    >
                     <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 border-b border-white/10 pb-2">
                       Voting Window Configuration
                     </h3>
@@ -2665,9 +2833,10 @@ export default function AdminDashboard({ username }: { username: string }) {
                         Apply Settings
                       </button>
                     </div>
-                  </div>
-                </div>
-              )}
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
 
@@ -2742,6 +2911,158 @@ export default function AdminDashboard({ username }: { username: string }) {
                   </div>
                 </motion.div>
               </div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {successAnimation && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] grid place-items-center bg-black/40 backdrop-blur-[2px]"
+              >
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ type: "spring", damping: 20, stiffness: 300 }}
+                  className="flex flex-col items-center justify-center rounded-2xl bg-zinc-900/90 border border-white/10 px-8 py-6 shadow-2xl backdrop-blur-md"
+                >
+                  {successAnimation.type === "create" || successAnimation.type === "update" ? (
+                    <div className={`relative flex h-16 w-16 items-center justify-center rounded-full border bg-opacity-20 ${
+                      successAnimation.type === "create"
+                        ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
+                        : "bg-cyan-500/20 border-cyan-500/30 text-cyan-400"
+                    }`}>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={3}
+                        stroke="currentColor"
+                        className="h-8 w-8"
+                      >
+                        <motion.path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M4.5 12.75l6 6 9-13.5"
+                          initial={{ pathLength: 0 }}
+                          animate={{ pathLength: 1 }}
+                          transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+                        />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-400">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={3}
+                        stroke="currentColor"
+                        className="h-8 w-8"
+                      >
+                        <motion.path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                          initial={{ pathLength: 0 }}
+                          animate={{ pathLength: 1 }}
+                          transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+                        />
+                      </svg>
+                    </div>
+                  )}
+                  <motion.span
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="mt-4 text-sm font-bold text-white uppercase tracking-wider"
+                  >
+                    {successAnimation.title}
+                  </motion.span>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {iconPickerTarget && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  transition={{ type: "spring", duration: 0.3 }}
+                  className="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-2xl flex flex-col max-h-[70vh] border border-white/10"
+                >
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Select Icon / Logo</h3>
+                    <button
+                      onClick={() => setIconPickerTarget(null)}
+                      className="rounded-lg border border-white/15 p-1 text-zinc-400 hover:text-white"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-5 gap-2.5 overflow-y-auto pr-1.5 flex-1 scrollbar-thin scrollbar-thumb-white/10">
+                    {toolIconOptions.map((name) => {
+                      const Picker = FaIcons[name as keyof typeof FaIcons] as
+                        | React.ComponentType<{ className?: string }>
+                        | undefined;
+                      
+                      const isSelected = iconPickerTarget.type === "create"
+                        ? toolIcon === name
+                        : draft.tools.find(t => t.id === iconPickerTarget.id)?.icon === name;
+
+                      const activeColor = iconPickerTarget.type === "create"
+                        ? toolColor
+                        : draft.tools.find(t => t.id === iconPickerTarget.id)?.color || draft.primaryColor;
+
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => {
+                            if (iconPickerTarget.type === "create") {
+                              setToolIcon(name);
+                            } else if (iconPickerTarget.id) {
+                              alterTool(iconPickerTarget.id, { icon: name });
+                            }
+                            setIconPickerTarget(null);
+                          }}
+                          title={name}
+                          className={`grid h-12 w-12 place-items-center rounded-xl border text-lg transition ${
+                            isSelected
+                              ? "border-white text-white bg-white/10 shadow-lg"
+                              : "border-white/10 bg-black/20 text-zinc-400 hover:border-white/20 hover:text-white hover:bg-white/5"
+                          }`}
+                          style={isSelected ? { color: activeColor, borderColor: `${activeColor}60` } : undefined}
+                        >
+                          {Picker ? <Picker className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 border-t border-white/10 pt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIconPickerTarget(null)}
+                      className="rounded-lg border border-white/10 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/5"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
             )}
           </AnimatePresence>
         </main>

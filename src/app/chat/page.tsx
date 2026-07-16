@@ -418,9 +418,10 @@ export default function Page() {
           {messages.map((message) => (
             <article key={message._id}>
               <div className="flex items-baseline gap-2">
-                <strong className={color(message.user)}>{message.user.gameName}</strong>
+                <strong className={color(message.user)}>
+                  {message.user.gameName} ({message.user.allianceName.toUpperCase()}-{message.user.serverNumber})
+                </strong>
                 <span className="text-xs text-zinc-500">
-                  [{message.user.allianceName.slice(0, 3).toUpperCase()}] ·{" "}
                   {formatRelativeTime(message.createdAt, now)}
                 </span>
               </div>
