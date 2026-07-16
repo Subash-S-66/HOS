@@ -76,7 +76,13 @@ export default function Page() {
     return () => clearInterval(interval);
   }, []);
 
-  const visibleEvents = events.filter((event) => !event.endsAt || new Date(event.endsAt).getTime() > now);
+  const visibleEvents = events
+    .filter((event) => !event.endsAt || new Date(event.endsAt).getTime() > now)
+    .sort((a, b) => {
+      const aTime = new Date(a.date || a.startsAt || "").getTime();
+      const bTime = new Date(b.date || b.startsAt || "").getTime();
+      return aTime - bTime;
+    });
 
   const getProfile = (): ParticipantProfile => {
     const saved = JSON.parse(localStorage.getItem(participantProfileKey) || "null") as ParticipantProfile | null;
@@ -412,7 +418,7 @@ export default function Page() {
                     {selectedEvent.maxParticipants ? ` / ${selectedEvent.maxParticipants}` : ""} joined
                   </p>
                 </div>
-                <button onClick={() => setSelectedEvent(null)} className="text-zinc-400 hover:text-white">
+                <button onClick={() => setSelectedEvent(null)} className="text-zinc-400 hover:text-white" aria-label="Close modal">
                   <X size={18} />
                 </button>
               </div>

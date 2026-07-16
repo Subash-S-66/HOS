@@ -37,6 +37,9 @@ function validate(req, res, next) {
 function adminOnly(req, res, next) {
   try {
     let token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (token === 'undefined' || token === 'null') {
+      token = undefined;
+    }
     if (!token && req.headers.cookie) {
       const match = req.headers.cookie.match(/(?:^|;\s*)hos_admin_session=([^;]*)/);
       if (match) token = decodeURIComponent(match[1]);
@@ -62,6 +65,9 @@ function requireJson(req, res, next) {
   const method = req.method.toUpperCase();
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
     const ct = req.headers['content-type'] || '';
+    if (ct.includes('multipart/form-data')) {
+      return next();
+    }
     if (!ct.includes('application/json')) {
       return res.status(415).json({ error: 'Content-Type must be application/json' });
     }

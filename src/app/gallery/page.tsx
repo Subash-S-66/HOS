@@ -30,6 +30,7 @@ export default function Page() {
   const [adminPass, setAdminPass] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
 
   useEffect(() => {
     api<Item[]>("/gallery")
@@ -41,8 +42,16 @@ export default function Page() {
     const image = e.target.files?.[0];
     if (!image || !apiUrl) return;
 
-    setUploading(true);
     setMessage("");
+
+    // Validate that the file is an image (rejecting video/documents)
+    if (!image.type.startsWith("image/")) {
+      setMessage("Videos and documents are not supported. Please upload an image file (PNG, JPG, WEBP, GIF, HEIC) only.");
+      e.target.value = "";
+      return;
+    }
+
+    setUploading(true);
 
     const uploader = localStorage.getItem("hos-chat-profile");
     const form = new FormData();
@@ -126,6 +135,8 @@ export default function Page() {
       setSelected(null);
       setAdminUser("");
       setAdminPass("");
+      setShowDeleteSuccess(true);
+      setTimeout(() => setShowDeleteSuccess(false), 2000);
 
       // 4. Show success notification
       setMessage("Image deleted successfully.");
@@ -141,7 +152,7 @@ export default function Page() {
     <main className="mx-auto min-h-screen w-full max-w-6xl p-4 pt-20 sm:p-8 sm:pt-24">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-bold tracking-[.25em] text-neon-blue">MEMORIES</p>
+          <p className="text-xs font-bold tracking-[.25em] text-neon-blue">IMAGES</p>
           <h1 className="mt-2 text-3xl font-bold text-white">HOS Gallery</h1>
         </div>
         <label
@@ -280,6 +291,79 @@ export default function Page() {
                 <CheckCircle2 size={48} className="stroke-[1.5]" />
               </motion.div>
               <p className="text-sm font-bold text-white tracking-wide">Upload Complete!</p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Deletion Success Pop-up */}
+      <AnimatePresence>
+        {showDeleteSuccess && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="glass-panel flex flex-col items-center gap-3 rounded-2xl bg-zinc-950/90 p-6 shadow-2xl border border-red-500/30 backdrop-blur-md min-w-[200px]"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 10 }}
+                className="text-red-500"
+              >
+                <CheckCircle2 size={48} className="stroke-[1.5]" />
+              </motion.div>
+              <p className="text-sm font-bold text-white tracking-wide">Delete Complete!</p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Uploading Overlay */}
+      <AnimatePresence>
+        {uploading && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: -15 }}
+              className="glass-panel flex flex-col items-center gap-4 rounded-2xl bg-zinc-950/90 p-8 shadow-2xl border border-neon-blue/30 backdrop-blur-md min-w-[240px]"
+            >
+              <div className="relative flex h-16 w-16 items-center justify-center">
+                <Loader2 className="animate-spin h-10 w-10 text-neon-blue" />
+                <motion.div
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full border border-neon-blue/20"
+                />
+              </div>
+              <p className="text-sm font-bold text-white tracking-wider animate-pulse">Uploading Image...</p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Deleting Overlay */}
+      <AnimatePresence>
+        {deleting && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: -15 }}
+              className="glass-panel flex flex-col items-center gap-4 rounded-2xl bg-zinc-950/90 p-8 shadow-2xl border border-red-500/30 backdrop-blur-md min-w-[240px]"
+            >
+              <div className="relative flex h-16 w-16 items-center justify-center">
+                <Loader2 className="animate-spin h-10 w-10 text-red-500" />
+                <motion.div
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full border border-red-500/20"
+                />
+              </div>
+              <p className="text-sm font-bold text-white tracking-wider animate-pulse">Deleting Image...</p>
             </motion.div>
           </div>
         )}

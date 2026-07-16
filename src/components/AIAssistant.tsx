@@ -132,6 +132,7 @@ export default function AIAssistant() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         className="fixed bottom-6 right-6 z-40 h-16 w-16 overflow-hidden rounded-full border-2 border-neon-purple bg-neon-purple/20 shadow-[0_0_20px_#bc13fe]"
+        aria-label="Open AI Assistant"
       >
         <motion.div
           animate={{ rotate: 360 }}
@@ -154,7 +155,7 @@ export default function AIAssistant() {
                 <div className="h-3 w-3 animate-pulse rounded-full bg-neon-green shadow-[0_0_10px_#39ff14]" />
                 <span className="font-bold tracking-widest text-neon-purple">HOS AI</span>
               </div>
-              <button onClick={() => setIsOpen(false)} className="text-gray-400 transition-colors hover:text-white">
+              <button onClick={() => setIsOpen(false)} className="text-gray-400 transition-colors hover:text-white" aria-label="Close AI Assistant">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -206,6 +207,7 @@ export default function AIAssistant() {
               <button
                 type="submit"
                 className="rounded-lg border border-neon-purple bg-neon-purple/20 p-2 text-neon-purple transition-all hover:bg-neon-purple hover:text-white"
+                aria-label="Send message"
               >
                 <Send className="h-5 w-5" />
               </button>

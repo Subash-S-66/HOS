@@ -6,8 +6,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { Users, MessageSquare, Image as ImageIcon, Calendar, History, Wrench, UserPlus, Video, Gamepad2 } from "lucide-react";
 import SecretAdminLogin from "@/components/SecretAdminLogin";
-import AIAssistant from "../components/AIAssistant";
+import dynamic from "next/dynamic";
 import { useSiteConfig } from "@/components/SiteProvider";
+
+const AIAssistant = dynamic(() => import("../components/AIAssistant"), {
+  ssr: false,
+});
 import type { LucideIcon } from "lucide-react";
 
 const defaultMessages = [

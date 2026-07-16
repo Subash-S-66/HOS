@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import ThreeBackground from "@/components/ThreeBackground";
 import Loading from "@/components/Loading";
+import ThreeBackgroundWrapper from "@/components/ThreeBackgroundWrapper";
 import { SiteProvider } from "@/components/SiteProvider";
 import SiteHeader from "@/components/SiteHeader";
 import PageBackButton from "@/components/PageBackButton";
@@ -181,7 +181,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground relative selection:bg-hos-red selection:text-white">
         {/* Global 3D Background */}
         <div className="fixed inset-0 z-0 pointer-events-none">
-          <ThreeBackground />
+          <ThreeBackgroundWrapper />
         </div>
 
         {/* Main Content Layer */}
