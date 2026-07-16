@@ -2136,6 +2136,23 @@ export default function AdminDashboard({ username }: { username: string }) {
                             </div>
                           </div>
 
+                          <div>
+                            <label className="text-xs text-zinc-300 block">Event Theme Color</label>
+                            <div className="mt-1 flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={eventColor}
+                                onChange={(e) => setEventColor(e.target.value)}
+                                className="h-9 w-12 rounded border border-white/10 bg-transparent cursor-pointer"
+                              />
+                              <input
+                                value={eventColor}
+                                onChange={(e) => setEventColor(e.target.value)}
+                                className="w-full rounded-lg border border-white/10 bg-black/35 px-2 py-2 text-xs text-zinc-300 outline-none"
+                              />
+                            </div>
+                          </div>
+
                           <div className="border-t border-white/5 pt-3 space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold text-zinc-300">Repeat event</span>
