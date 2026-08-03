@@ -15,6 +15,47 @@ type Item = {
 };
 
 const MAX_GALLERY_IMAGE_BYTES = 15 * 1024 * 1024;
+const PROXY_SAFE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number) =>
+  new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+
+const optimizeForUpload = async (file: File): Promise<File> => {
+  if (file.size <= PROXY_SAFE_UPLOAD_BYTES || file.type === "image/gif") return file;
+
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const source = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new window.Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = sourceUrl;
+    });
+
+    const scale = Math.min(1, 2560 / Math.max(source.naturalWidth, source.naturalHeight));
+    let width = Math.max(1, Math.round(source.naturalWidth * scale));
+    let height = Math.max(1, Math.round(source.naturalHeight * scale));
+    let quality = 0.86;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")?.drawImage(source, 0, 0, width, height);
+      const optimized = await canvasToBlob(canvas, quality);
+      if (optimized && optimized.size <= PROXY_SAFE_UPLOAD_BYTES) {
+        return new File([optimized], file.name.replace(/\.[^.]+$/, ".webp"), { type: "image/webp" });
+      }
+      quality = Math.max(0.5, quality - 0.12);
+      width = Math.max(1, Math.round(width * 0.8));
+      height = Math.max(1, Math.round(height * 0.8));
+    }
+  } catch {
+    // Some image formats cannot be read by a browser canvas; upload the original instead.
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+  return file;
+};
 
 export default function Page() {
   const [items, setItems] = useState<Item[]>([]);
@@ -61,11 +102,12 @@ export default function Page() {
     setUploading(true);
 
     const uploader = localStorage.getItem("hos-chat-profile");
-    const form = new FormData();
-    form.append("image", image);
-    form.append("uploader", uploader ? JSON.parse(uploader).gameName : "HOS visitor");
 
     try {
+      const uploadFile = await optimizeForUpload(image);
+      const form = new FormData();
+      form.append("image", uploadFile);
+      form.append("uploader", uploader ? JSON.parse(uploader).gameName : "HOS visitor");
       const response = await fetch(`${apiUrl}/gallery`, {
         method: "POST",
         body: form,
@@ -74,7 +116,7 @@ export default function Page() {
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         if (response.status === 413) {
-          throw new Error("Image is too large. Please choose an image no larger than 15 MB.");
+          throw new Error("This image is still too large for the upload service. Please try a smaller image or try again later.");
         }
         if (response.status === 429) {
           throw new Error(payload?.error || "You have uploaded several images recently. Please wait a few minutes and try again.");

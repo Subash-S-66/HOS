@@ -52,3 +52,10 @@ export const defaultSiteConfig: SiteConfig = {
     { id: "events", title: "Event Planner", description: "Never miss a coordinated alliance event.", icon: "FaCalendarDays", color: "#bc13fe", category: "Planning", order: 3, link: "/events", enabled: true, visible: true },
   ],
 };
+
+export const emptySiteConfig: SiteConfig = {
+  title: "", banner: "", youtubeUrl: "", discordUrl: "", primaryColor: "#00f3ff",
+  footer: "", galleryUploadsPer10Min: 2, tools: [], svsHistory: [],
+  recruitmentEmailSenderName: "", recruitmentEmailReceiver: "",
+  recruitmentEmailLimitPer30Min: 2, chatMessagesLimitPerMin: 30,
+};
