@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { defaultSiteConfig, type SiteConfig } from "@/lib/site-config";
+import { emptySiteConfig, type SiteConfig } from "@/lib/site-config";
 import { api } from "@/lib/api";
 
 type ToolResponse = {
@@ -39,10 +39,12 @@ type SettingsResponse = {
 
 const SiteContext = createContext<{
   config: SiteConfig;
+  isLoading: boolean;
   updateConfig: (config: SiteConfig) => void;
   refreshConfig: () => Promise<void>;
 }>({
-  config: defaultSiteConfig,
+  config: emptySiteConfig,
+  isLoading: true,
   updateConfig: () => {},
   refreshConfig: async () => {},
 });
@@ -58,7 +60,8 @@ const hexToRgb = (hex: string) => {
 };
 
 export function SiteProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState(defaultSiteConfig);
+  const [config, setConfig] = useState(emptySiteConfig);
+  const [isLoading, setIsLoading] = useState(true);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -68,19 +71,18 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
         api<SettingsResponse>("/settings"),
       ]);
 
-      setConfig((current) => ({
-        ...current,
-        title: settings.websiteTitle ?? current.title,
-        banner: settings.banner ?? current.banner,
-        youtubeUrl: settings.youtubeLink ?? current.youtubeUrl,
-        discordUrl: settings.discordLink ?? current.discordUrl,
-        footer: settings.footer ?? current.footer,
-        primaryColor: settings.primaryColor ?? current.primaryColor,
-        galleryUploadsPer10Min: Number(settings.galleryUploadsPer10Min ?? current.galleryUploadsPer10Min ?? 2),
-        recruitmentEmailSenderName: settings.recruitmentEmailSenderName ?? current.recruitmentEmailSenderName,
-        recruitmentEmailReceiver: settings.recruitmentEmailReceiver ?? current.recruitmentEmailReceiver,
-        recruitmentEmailLimitPer30Min: Number(settings.recruitmentEmailLimitPer30Min ?? current.recruitmentEmailLimitPer30Min ?? 2),
-        chatMessagesLimitPerMin: Number(settings.chatMessagesLimitPerMin ?? current.chatMessagesLimitPerMin ?? 30),
+      setConfig({
+        title: settings.websiteTitle ?? "",
+        banner: settings.banner ?? "",
+        youtubeUrl: settings.youtubeLink ?? "",
+        discordUrl: settings.discordLink ?? "",
+        footer: settings.footer ?? "",
+        primaryColor: settings.primaryColor ?? "#00f3ff",
+        galleryUploadsPer10Min: Number(settings.galleryUploadsPer10Min ?? 2),
+        recruitmentEmailSenderName: settings.recruitmentEmailSenderName ?? "",
+        recruitmentEmailReceiver: settings.recruitmentEmailReceiver ?? "",
+        recruitmentEmailLimitPer30Min: Number(settings.recruitmentEmailLimitPer30Min ?? 2),
+        chatMessagesLimitPerMin: Number(settings.chatMessagesLimitPerMin ?? 30),
         tools: tools.map((tool) => ({
           id: tool.toolId,
           title: tool.title,
@@ -100,12 +102,12 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
               : entry.position === 2
                 ? "Previous SVS"
                 : `SVS Archive ${entry.position}`,
-          date: entry.date || current.svsHistory[entry.position - 1]?.date || "",
+          date: entry.date || "",
           url: entry.url,
         })),
-      }));
-    } catch {
-      // Keep defaults if backend is unavailable.
+      });
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -127,7 +129,7 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
     setConfig(next);
   };
 
-  return <SiteContext.Provider value={{ config, updateConfig, refreshConfig }}>{children}</SiteContext.Provider>;
+  return <SiteContext.Provider value={{ config, isLoading, updateConfig, refreshConfig }}>{children}</SiteContext.Provider>;
 }
 
 export const useSiteConfig = () => useContext(SiteContext);

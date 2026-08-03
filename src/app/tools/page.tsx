@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import * as Icons from "react-icons/fa6";
 import { ExternalLink, Wrench } from "lucide-react";
@@ -8,22 +7,11 @@ import { useSiteConfig } from "@/components/SiteProvider";
 import { PageLoader } from "@/components/PageLoader";
 
 export default function Page() {
-  const { config } = useSiteConfig();
-  const [loading, setLoading] = useState(true);
+  const { config, isLoading } = useSiteConfig();
 
   const tools = config.tools
     .filter((tool) => tool.enabled && (tool.visible ?? true))
     .sort((a, b) => a.order - b.order);
-
-  // Mark loading as false once tools have been populated from the API
-  useEffect(() => {
-    if (config.tools.length > 0) {
-      setLoading(false);
-    }
-    // Also handle case where API returns but there are no tools configured
-    const timer = setTimeout(() => setLoading(false), 4000);
-    return () => clearTimeout(timer);
-  }, [config.tools]);
 
   return (
     <section className="mx-auto min-h-screen w-full max-w-5xl px-4 py-20 sm:px-8">
@@ -37,7 +25,7 @@ export default function Page() {
         </p>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <PageLoader label="Loading Command Tools..." />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
