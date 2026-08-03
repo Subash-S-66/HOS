@@ -20,6 +20,8 @@ The frontend is ready for Vercel out of the box because it uses a standard Next.
    - `NEXT_PUBLIC_SOCKET_URL`: The base URL of your deployed backend for WebSocket connections (e.g., `https://hos-backend.onrender.com`).
 6. Click **Deploy**. Vercel will build the frontend and serve it.
 
+> Gallery uploads can be up to 15 MB. Set `NEXT_PUBLIC_API_URL` to the separately deployed Node API; do not send these uploads through the Vercel `/api` rewrite, whose request-body limit is lower.
+
 ---
 
 ## 2. Deploying Backend to a Node Host (Render / Railway / Fly)

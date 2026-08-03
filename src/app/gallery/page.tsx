@@ -14,6 +14,8 @@ type Item = {
   likes: number;
 };
 
+const MAX_GALLERY_IMAGE_BYTES = 15 * 1024 * 1024;
+
 export default function Page() {
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<Item | null>(null);
@@ -44,9 +46,14 @@ export default function Page() {
 
     setMessage("");
 
-    // Validate that the file is an image (rejecting video/documents)
     if (!image.type.startsWith("image/")) {
-      setMessage("Videos and documents are not supported. Please upload an image file (PNG, JPG, WEBP, GIF, HEIC) only.");
+      setMessage("Videos and documents are not supported. Please upload an image file only.");
+      e.target.value = "";
+      return;
+    }
+
+    if (image.size > MAX_GALLERY_IMAGE_BYTES) {
+      setMessage("Image is too large. Please choose an image no larger than 15 MB.");
       e.target.value = "";
       return;
     }
@@ -65,7 +72,17 @@ export default function Page() {
       });
 
       if (!response.ok) {
-        throw new Error((await response.json()).error);
+        const payload = await response.json().catch(() => null);
+        if (response.status === 413) {
+          throw new Error("Image is too large. Please choose an image no larger than 15 MB.");
+        }
+        if (response.status === 429) {
+          throw new Error(payload?.error || "You have uploaded several images recently. Please wait a few minutes and try again.");
+        }
+        if (response.status === 422 || response.status === 415) {
+          throw new Error("We couldn’t use that file. Please choose a different image and try again.");
+        }
+        throw new Error("We couldn’t upload your image right now. Please try again in a moment.");
       }
 
       const item = await response.json();
@@ -73,7 +90,13 @@ export default function Page() {
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Upload failed.");
+      setMessage(
+        error instanceof TypeError
+          ? "We couldn’t connect to the upload service. Please check your connection and try again."
+          : error instanceof Error
+            ? error.message
+            : "We couldn’t upload your image right now. Please try again in a moment.",
+      );
     } finally {
       setUploading(false);
     }
@@ -172,13 +195,15 @@ export default function Page() {
           )}
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/heic"
+            accept="image/*"
             className="hidden"
             onChange={upload}
             disabled={uploading}
           />
         </label>
       </header>
+
+      <p className="-mt-5 mb-4 text-xs text-zinc-400">All image formats · maximum 15 MB</p>
 
       {message && <p className="mb-4 text-sm text-red-400 font-semibold">{message}</p>}
 

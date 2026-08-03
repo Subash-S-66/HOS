@@ -88,6 +88,9 @@ function noCache(req, res, next) {
  * Never leaks stack traces in production.
  */
 function errorHandler(error, _req, res, _next) {
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'Image is too large. Please choose an image no larger than 15 MB.' });
+  }
   if (error.name === 'ValidationError') {
     return res.status(422).json({
       error: 'Validation failed',

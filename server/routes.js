@@ -24,11 +24,12 @@ const { jwtSecret, cloudinary: cloudinaryConfig, mail, clientOrigin } = require(
 const { validate, adminOnly } = require('./middleware');
 
 const router = express.Router();
+const MAX_GALLERY_IMAGE_BYTES = 15 * 1024 * 1024;
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => cb(null, /image\/(png|jpeg|webp|gif|heic)/.test(file.mimetype)),
+  limits: { fileSize: MAX_GALLERY_IMAGE_BYTES },
+  fileFilter: (_req, file, cb) => cb(null, file.mimetype.startsWith('image/')),
 });
 
 cloudinary.config(cloudinaryConfig);
@@ -534,7 +535,9 @@ router.post(
   upload.single('image'),
   asyncRoute(async (req, res) => {
     if (!req.file || !req.body.uploader) {
-      return res.status(422).json({ error: 'Image and uploader are required' });
+      return res.status(422).json({
+        error: 'Please choose an image file no larger than 15 MB.',
+      });
     }
 
     const site = await Settings.findOne({ key: 'site' }).lean();
