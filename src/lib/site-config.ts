@@ -28,7 +28,9 @@ const latestSvsDate = () => {
 const svs = Array.from({ length: 10 }, (_, index) => {
   const date = latestSvsDate();
   date.setUTCDate(date.getUTCDate() - index * 14);
-  const week = isoWeek(date);
+  const svsWeekend = new Date(date);
+  svsWeekend.setUTCDate(svsWeekend.getUTCDate() - 2);
+  const week = isoWeek(svsWeekend);
   return {
     label: index === 0 ? "Latest SVS" : index === 1 ? "Previous SVS" : `SVS Archive ${index + 1}`,
     date: date.toISOString(),

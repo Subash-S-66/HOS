@@ -25,7 +25,11 @@ const scheduledSvsHistory = (now = new Date(), length = 10) => {
   const latest = SVS_FIRST_UPDATE + Math.floor((today - SVS_FIRST_UPDATE) / (14 * DAY)) * 14 * DAY;
   return Array.from({ length }, (_, index) => {
     const date = new Date(latest - index * 14 * DAY);
-    const week = isoWeek(date);
+    // The history updates on Monday, but svs.info identifies the completed
+    // SVS by the Saturday of that weekend (e.g. Aug 3 -> 2026-W31).
+    const svsWeekend = new Date(date);
+    svsWeekend.setUTCDate(svsWeekend.getUTCDate() - 2);
+    const week = isoWeek(svsWeekend);
     return { position: index + 1, date, week, url: `https://svs.info/server/1895/svs/${week}` };
   });
 };
