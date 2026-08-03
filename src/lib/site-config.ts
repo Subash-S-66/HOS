@@ -9,13 +9,30 @@ export type SiteConfig = {
   chatMessagesLimitPerMin: number;
 };
 
+const SVS_CADENCE_ORIGIN = Date.UTC(2026, 7, 3);
+const DAY = 24 * 60 * 60 * 1000;
+
+const isoWeek = (date: Date) => {
+  const value = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  value.setUTCDate(value.getUTCDate() + 4 - (value.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1));
+  return `${value.getUTCFullYear()}-W${String(Math.ceil((((value.getTime() - yearStart.getTime()) / DAY) + 1) / 7)).padStart(2, "0")}`;
+};
+
+const latestSvsDate = () => {
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(SVS_CADENCE_ORIGIN + Math.floor((today - SVS_CADENCE_ORIGIN) / (14 * DAY)) * 14 * DAY);
+};
+
 const svs = Array.from({ length: 10 }, (_, index) => {
-  const date = new Date(Date.UTC(2026, 6, 20));
+  const date = latestSvsDate();
   date.setUTCDate(date.getUTCDate() - index * 14);
+  const week = isoWeek(date);
   return {
     label: index === 0 ? "Latest SVS" : index === 1 ? "Previous SVS" : `SVS Archive ${index + 1}`,
     date: date.toISOString(),
-    url: `https://svs.info/server/1895/svs/2026-W${String(30 - index * 2).padStart(2, "0")}`,
+    url: `https://svs.info/server/1895/svs/${week}`,
   };
 });
 

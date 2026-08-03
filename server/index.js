@@ -14,6 +14,7 @@ const { port, mongoUri, clientOrigin, assertConfig } = require('./config');
 const { router, createChatUser, setUserOffline, Message, tally, createDueRecurringEvents } = require('./routes');
 const { Settings, SVSHistory, User } = require('./models');
 const { errorHandler, requireJson, noCache } = require('./middleware');
+const { scheduledSvsHistory } = require('./svs-schedule');
 
 const cleanText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max ? value.trim().replace(/[<>]/g, '') : null;
 // express-mongo-sanitize's middleware assigns to req.query, which Express 5
@@ -23,17 +24,7 @@ const rejectMongoOperators = (req, res, next) => {
   if (requestData.some((value) => value && mongoSanitize.has(value))) return res.status(400).json({ error: 'Invalid request data' });
   next();
 };
-const SVS_BASE_DATE = new Date(Date.UTC(2026, 6, 4)); // Current latest SVS Saturday: July 4, 2026 (W27).
-const SVS_UPDATE_ANCHOR = Date.UTC(2026, 6, 20); // Advance fires Monday July 20 → stored date July 18 (W29) → Aug 1 (W31)…
-const DAY = 24 * 60 * 60 * 1000;
-const isoWeek = (date) => { const value = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())); value.setUTCDate(value.getUTCDate() + 4 - (value.getUTCDay() || 7)); const yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1)); return `${value.getUTCFullYear()}-W${String(Math.ceil((((value - yearStart) / DAY) + 1) / 7)).padStart(2, '0')}`; };
 const svsDateFromWeek = (week) => { const [year, number] = week.split('-W').map(Number); const jan4 = new Date(Date.UTC(year, 0, 4)); const monday = new Date(jan4); monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (number - 1) * 7); return monday; };
-const newYorkDateKey = (date = new Date()) => { const fields = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date); const get = (type) => fields.find((field) => field.type === type).value; return `${get('year')}-${get('month')}-${get('day')}`; };
-// Returns how many 14-day advances have been due since SVS_UPDATE_ANCHOR, based on current NY date.
-const scheduledSvsUpdates = (date = new Date()) => {
-  const offset = Date.parse(`${newYorkDateKey(date)}T00:00:00Z`) - SVS_UPDATE_ANCHOR;
-  return offset < 0 ? 0 : Math.floor(offset / (14 * DAY)) + 1;
-};
 
 // Fills in missing `date` fields from legacy week strings (migration guard).
 async function ensureSvsDates() {
@@ -42,20 +33,23 @@ async function ensureSvsDates() {
   await Promise.all(entries.map((entry) => SVSHistory.updateOne({ _id: entry._id }, { $set: { date: svsDateFromWeek(entry.week) } })));
 }
 
-// Shifts every SVS entry forward by exactly 14 days.
-async function advanceSvsHistory() {
-  const entries = await SVSHistory.find().sort({ position: 1 });
-  await Promise.all(entries.map((entry) => {
-    const date = new Date(entry.date || svsDateFromWeek(entry.week));
-    date.setUTCDate(date.getUTCDate() + 14);
-    const week = isoWeek(date);
-    return SVSHistory.updateOne({ _id: entry._id }, { $set: { date, week, url: `https://svs.info/server/1895/svs/${week}` } });
-  }));
-}
-
 // Advance SVS history only for missed scheduled updates since SVS_UPDATE_ANCHOR.
 // Uses DB state exclusively — safe across crashes, restarts, and cron overlaps.
 async function advanceSvsIfDue() {
+  const schedule = scheduledSvsHistory();
+  if (!schedule.length) return;
+
+  // Rebuild from the calendar instead of shifting persisted dates. This fixes
+  // old incorrect records and guarantees that the newest entry is never future-dated.
+  await Promise.all(schedule.map((entry) => SVSHistory.updateOne(
+    { position: entry.position },
+    { $set: entry },
+    { upsert: true, runValidators: true },
+  )));
+  console.log(`[SVS] Synced history through ${schedule[0].date.toISOString().slice(0, 10)}.`);
+  return;
+
+  /* Legacy incremental catch-up code intentionally disabled: calendar sync above is authoritative.
   const totalDue = scheduledSvsUpdates();
   if (!totalDue) return; // Nothing due yet (before first anchor date).
 
@@ -80,6 +74,7 @@ async function advanceSvsIfDue() {
     { upsert: true }
   );
   console.log(`[SVS] Advanced to ${lastDueDate}.`);
+  */
 }
 
 // Only seeds from SVS_BASE_DATE if the collection is empty (first-ever run).
@@ -87,6 +82,11 @@ async function advanceSvsIfDue() {
 async function seedSvs() {
   const count = await SVSHistory.countDocuments();
   if (count > 0) return;
+  const schedule = scheduledSvsHistory();
+  if (!schedule.length) return;
+  await SVSHistory.insertMany(schedule);
+  console.log(`[SVS] Empty collection detected — seeded scheduled history through ${schedule[0].date.toISOString().slice(0, 10)}.`);
+  return;
   console.log('[SVS] Empty collection detected — seeding initial history from', SVS_BASE_DATE.toISOString().slice(0, 10));
   await SVSHistory.insertMany(Array.from({ length: 10 }, (_, index) => {
     const date = new Date(SVS_BASE_DATE);
